@@ -1,0 +1,185 @@
+// Copyright (c) Jared Taylor. All Rights Reserved
+
+#pragma once
+
+// Tiling-break sampling for the landscape material. Included from Custom nodes as
+// /MobMasterMaterial/Public/MobLandscapeBombing.ush.
+//
+// Four tiers, selected per layer by a static switch so the unused ones compile out:
+//   None  - one tap, straight sample
+//   Cheap - one tap, modulated by the macro-variation noise the master samples once for all layers
+//   Dual  - two taps, a second scale overlaid to break the macro repeat without halving contrast
+//   Hex   - three taps, stochastic hex-tile sampling; no repeat survives it
+//
+// Every tier takes explicit gradients. The layer samplers are Shared:Wrap, so an implicit
+// sample inside a Custom node would take its derivatives from the wrong place once UVs are
+// rotated or offset per cell.
+
+#include "/MobMasterMaterial/Public/MobMaterialUtil.ush"
+
+// ---------------------------------------------------------------------------
+// Hash / rotation
+// ---------------------------------------------------------------------------
+
+float2 MobHash2(float2 P)
+{
+	// Wrapped before the sine so the argument stays small - unwrapped cell ids drift far
+	// enough out that sin() loses its low bits on mobile precision.
+	P = P - floor(P * (1.0f / 289.0f)) * 289.0f;
+	P = float2(dot(P, float2(127.1f, 311.7f)), dot(P, float2(269.5f, 183.3f)));
+	return frac(sin(P) * 43758.5453123f);
+}
+
+float2 MobRotate2D(float2 V, float SinA, float CosA)
+{
+	return float2(V.x * CosA - V.y * SinA, V.x * SinA + V.y * CosA);
+}
+
+/** Scale, offset and rotate a layer's UVs. Rotation is applied last so scale stays axis-aligned. */
+float2 MobPrepUV(float2 UV, float Scale, float RotationDeg, float2 Offset)
+{
+	float2 P = UV * Scale + Offset;
+	float S, C;
+	sincos(radians(RotationDeg), S, C);
+	return MobRotate2D(P, S, C);
+}
+
+// ---------------------------------------------------------------------------
+// Hex lattice
+// ---------------------------------------------------------------------------
+
+/**
+ * Barycentric weights and the three lattice cell ids covering UV, on the equilateral triangle
+ * grid that underlies the hex tiling.
+ */
+void MobTriangleGrid(float2 UV, out float3 W, out float2 V1, out float2 V2, out float2 V3)
+{
+	UV *= 3.4641016f; // 2 * sqrt(3)
+
+	const float2x2 GridToSkewed = float2x2(1.0f, 0.0f, -0.57735027f, 1.15470054f);
+	float2 Skewed = mul(GridToSkewed, UV);
+
+	float2 BaseId = floor(Skewed);
+	float3 Temp = float3(frac(Skewed), 0.0f);
+	Temp.z = 1.0f - Temp.x - Temp.y;
+
+	if (Temp.z > 0.0f)
+	{
+		W = float3(Temp.z, Temp.y, Temp.x);
+		V1 = BaseId;
+		V2 = BaseId + float2(0.0f, 1.0f);
+		V3 = BaseId + float2(1.0f, 0.0f);
+	}
+	else
+	{
+		W = float3(-Temp.z, 1.0f - Temp.y, 1.0f - Temp.x);
+		V1 = BaseId + float2(1.0f, 1.0f);
+		V2 = BaseId + float2(1.0f, 0.0f);
+		V3 = BaseId + float2(0.0f, 1.0f);
+	}
+}
+
+/** Sharpens the barycentric weights so the three taps cross-fade over a narrow band. */
+float3 MobShapeHexWeights(float3 W, float Contrast)
+{
+	W = pow(max(W, MOB_EPS), max(Contrast, 1.0f));
+	return W / max(W.x + W.y + W.z, MOB_EPS);
+}
+
+/**
+ * Blending three taps averages away the texture's variance and leaves it looking washed out.
+ * Pushing the result back out from the texture's mean restores it. Mean is a per-layer
+ * parameter because it is a property of the source art, not something the shader can know.
+ */
+float3 MobRestoreVariance(float3 Blended, float3 Mean, float3 W, float Amount)
+{
+	float Gain = rsqrt(max(dot(W, W), MOB_EPS));
+	return lerp(Blended, Mean + (Blended - Mean) * Gain, saturate(Amount));
+}
+
+// ---------------------------------------------------------------------------
+// Coordinate generation
+// ---------------------------------------------------------------------------
+//
+// Nothing here touches a texture. A Custom node always emits its texture input's own sampler
+// (there is no shared-sampler path through one), and twelve layers of two textures each would
+// need twenty-four sampler registers against a limit of sixteen. So the taps happen in
+// TextureSample nodes set to Shared:Wrap, which all collapse onto one sampler, and these
+// functions only hand them the coordinates.
+
+/**
+ * The three hex cell coordinate sets and their blend weights. Each cell gets its own offset and
+ * rotation; without the rotation a strongly directional texture still reads as one repeating
+ * direction even though the tile origins differ. Gradients are rotated to match or mip
+ * selection fights the coordinates.
+ */
+void MobHexCells(
+	float2 UV, float2 DDX, float2 DDY,
+	float RotationAmount, float BlendContrast,
+	out float2 UV1, out float2 DX1, out float2 DY1,
+	out float2 UV2, out float2 DX2, out float2 DY2,
+	out float2 UV3, out float2 DX3, out float2 DY3,
+	out float3 W)
+{
+	float2 V1, V2, V3;
+	MobTriangleGrid(UV, W, V1, V2, V3);
+
+	float2 R1 = MobHash2(V1);
+	float2 R2 = MobHash2(V2);
+	float2 R3 = MobHash2(V3);
+
+	float S1, C1, S2, C2, S3, C3;
+	sincos(R1.x * 6.2831853f * RotationAmount, S1, C1);
+	sincos(R2.x * 6.2831853f * RotationAmount, S2, C2);
+	sincos(R3.x * 6.2831853f * RotationAmount, S3, C3);
+
+	UV1 = MobRotate2D(UV, S1, C1) + R1;
+	UV2 = MobRotate2D(UV, S2, C2) + R2;
+	UV3 = MobRotate2D(UV, S3, C3) + R3;
+
+	DX1 = MobRotate2D(DDX, S1, C1);
+	DY1 = MobRotate2D(DDY, S1, C1);
+	DX2 = MobRotate2D(DDX, S2, C2);
+	DY2 = MobRotate2D(DDY, S2, C2);
+	DX3 = MobRotate2D(DDX, S3, C3);
+	DY3 = MobRotate2D(DDY, S3, C3);
+
+	W = MobShapeHexWeights(W, BlendContrast);
+}
+
+// ---------------------------------------------------------------------------
+// Combining taps
+// ---------------------------------------------------------------------------
+
+/** Weighted sum of the three hex taps. */
+float4 MobHexCombine(float4 A, float4 B, float4 C, float3 W)
+{
+	return A * W.x + B * W.y + C * W.z;
+}
+
+/**
+ * Two taps at incommensurate scales combined as an overlay rather than a lerp. A lerp of two
+ * scales just halves the contrast and reads as blur; overlay keeps the detail and only disturbs
+ * the low frequency that made the repeat visible.
+ */
+float4 MobDualCombine(float4 Base, float4 Second, float Amount)
+{
+	return lerp(Base, saturate(Base * Second * 2.0f), saturate(Amount));
+}
+
+// ---------------------------------------------------------------------------
+// Macro variation
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies the shared low-frequency noise the master samples once for the whole material. Costs
+ * every layer nothing and is the single cheapest thing that stops terrain reading as one flat
+ * colour, so it runs on every tier including None.
+ */
+float3 MobMacroModulate(float3 Color, float Noise, float3 TintA, float3 TintB, float TintAmount, float ValueAmount)
+{
+	float3 Tinted = Color * lerp(TintA, TintB, saturate(Noise));
+	Color = lerp(Color, Tinted, saturate(TintAmount));
+	float Value = lerp(1.0f, Noise * 2.0f, saturate(ValueAmount));
+	return max(Color * Value, 0.0f);
+}

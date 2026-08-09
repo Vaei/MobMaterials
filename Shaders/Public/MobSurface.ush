@@ -1,0 +1,232 @@
+// Copyright (c) Jared Taylor. All Rights Reserved
+
+#pragma once
+
+// Helpers for the prop, environment and building master material. Included from Custom nodes as
+// /MobMasterMaterial/Public/MobSurface.ush.
+//
+// The texture pack is BaseColor + Normal + CRM, where CRM is Cavity, Roughness, Metallic. There is
+// no AO channel on purpose: the renderer supplies its own occlusion and a baked AO on top of it
+// darkens twice. Cavity takes that slot and also stands in as the height field for layer blending,
+// so height blending needs no extra texture.
+//
+// Nothing here samples a texture. A Custom node always emits its texture input's own sampler and
+// has no shared-sampler path, so the taps happen in TextureSample nodes set to Shared:Wrap and
+// these functions only produce coordinates or consume already-sampled values.
+
+#include "/MobMasterMaterial/Public/MobMaterialUtil.ush"
+
+// ---------------------------------------------------------------------------
+// Coordinates
+// ---------------------------------------------------------------------------
+
+/** Scale, offset and rotate a mesh UV. Rotation is applied last so scale stays axis aligned. */
+float2 MobPrepMeshUV(float2 UV, float Scale, float RotationDeg, float2 Offset)
+{
+	float2 P = UV * Scale + Offset;
+	float S, C;
+	sincos(radians(RotationDeg), S, C);
+	return float2(P.x * C - P.y * S, P.x * S + P.y * C);
+}
+
+// ---------------------------------------------------------------------------
+// Layer grading
+// ---------------------------------------------------------------------------
+
+/** Cavity, pushed toward or away from white. Contrast of 1 leaves the source alone. */
+float MobShapeCavity(float Cavity, float Contrast)
+{
+	return saturate(pow(max(Cavity, MOB_EPS), max(Contrast, MOB_EPS)));
+}
+
+// ---------------------------------------------------------------------------
+// Layer weights
+// ---------------------------------------------------------------------------
+
+/**
+ * Three layer contributions from two paint weights, resolved against each layer's height so the
+ * layers interlock along their detail instead of cross-fading. Returned as weights rather than a
+ * chain of lerps so one weighted sum can blend every channel at once.
+ *
+ * HeightAmount of 0 hands back the paint weights untouched, which is the plain cross-fade, so
+ * there is no separate linear path and no static switch for one.
+ */
+float3 MobLayerWeights3(float H0, float H1, float H2, float W1, float W2,
+	float Contrast, float HeightAmount)
+{
+	float A1 = MobHeightBlendAlpha(H0, H1, saturate(W1), Contrast, HeightAmount);
+	float A2 = MobHeightBlendAlpha(lerp(H0, H1, A1), H2, saturate(W2), Contrast, HeightAmount);
+
+	float3 W;
+	W.z = A2;
+	W.y = A1 * (1.0f - A2);
+	W.x = (1.0f - A1) * (1.0f - A2);
+	return W;
+}
+
+/** Weighted sum of three layers. */
+float3 MobBlend3(float3 A, float3 B, float3 C, float3 W)
+{
+	return A * W.x + B * W.y + C * W.z;
+}
+
+/** Weighted sum of three tangent normals. Summing then renormalising is enough at these weights. */
+float3 MobBlendNormal3(float3 A, float3 B, float3 C, float3 W)
+{
+	return normalize(A * W.x + B * W.y + C * W.z);
+}
+
+// ---------------------------------------------------------------------------
+// Triplanar
+// ---------------------------------------------------------------------------
+//
+// The three projections and the tangent basis each one implies, in UE's Z-up space:
+//
+//   Z (top down)  UV = P.xy   u = +X  v = +Y  axis = +Z
+//   X (side)      UV = P.yz   u = +Y  v = +Z  axis = +X
+//   Y (side)      UV = P.xz   u = +X  v = +Z  axis = +Y
+//
+// Coordinates are continuous across the surface, so the TextureSample nodes can take their
+// derivatives implicitly and no explicit gradients are needed.
+
+/** The three projected coordinate sets. Weights come from MobTriplanarWeights. */
+void MobTriplanarCoords(float3 WorldPos, float Scale, float2 Offset,
+	out float2 UVX, out float2 UVY, out float2 UVZ)
+{
+	float3 P = WorldPos * Scale;
+	UVX = P.yz + Offset;
+	UVY = P.xz + Offset;
+	UVZ = P.xy + Offset;
+}
+
+/** Weighted sum of the three projections. */
+float4 MobTriplanarCombine(float4 X, float4 Y, float4 Z, float3 W)
+{
+	return X * W.x + Y * W.y + Z * W.z;
+}
+
+/**
+ * Combines three projections of a tangent normal map into one world-space normal. Each projection
+ * is reoriented against the geometric normal first (whiteout blend) so a face that is mostly, but
+ * not exactly, axis aligned does not lose the slope the other two projections were carrying.
+ *
+ * The result is world space; MobWorldToTangent takes it back to what the Normal pin expects.
+ */
+float3 MobTriplanarNormalCombine(float3 NX, float3 NY, float3 NZ, float3 GeoNormal, float3 W)
+{
+	float3 G = normalize(GeoNormal);
+
+	NX = float3(NX.xy + G.yz, abs(NX.z) * G.x);
+	NY = float3(NY.xy + G.xz, abs(NY.z) * G.y);
+	NZ = float3(NZ.xy + G.xy, abs(NZ.z) * G.z);
+
+	// Swizzle each back into world space, then weight.
+	float3 WX = float3(NX.z, NX.x, NX.y);
+	float3 WY = float3(NY.x, NY.z, NY.y);
+	float3 WZ = NZ;
+
+	return normalize(WX * W.x + WY * W.y + WZ * W.z);
+}
+
+/**
+ * World space back to tangent space. TangentToWorld is orthonormal, so the inverse is the
+ * transpose and multiplying from the other side is all it takes. Pass Parameters.TangentToWorld;
+ * this is pixel shader only.
+ */
+float3 MobWorldToTangent(float3 WorldN, float3x3 TangentToWorld)
+{
+	return normalize(mul(TangentToWorld, WorldN));
+}
+
+// ---------------------------------------------------------------------------
+// Wetness
+// ---------------------------------------------------------------------------
+
+/**
+ * Darkens and smooths a wet surface, and flattens it out completely where water stands. Amount is
+ * the global weather value scaled by whatever the instance and the vertex paint asked for.
+ *
+ * Porosity comes from cavity, so water reaches the crevices before it reaches the high points, and
+ * standing water needs a harder threshold than the damp darkening around it. Metallic is left
+ * alone: a wet metal is still metal.
+ */
+float3 MobWetness(
+	float3 BaseColor, float3 Normal, float Roughness, float Specular, float Cavity, float WorldNormalZ,
+	float Amount, float Darkening, float RoughnessTarget, float NormalFlatten, float SpecularTarget,
+	float PorosityAmount, float PuddleDepth, float PuddleRoughness, float PuddleFacing,
+	out float3 OutNormal, out float OutRoughness, out float OutSpecular, out float OutMask, out float OutPuddle)
+{
+	float Porosity = saturate(1.0f - Cavity);
+	float W = saturate(Amount * lerp(1.0f, Porosity, saturate(PorosityAmount)));
+
+	float Up = smoothstep(saturate(PuddleFacing), 1.0f, WorldNormalZ);
+	float Puddle = saturate((Porosity - (1.0f - PuddleDepth)) * 8.0f) * W * Up;
+
+	float3 Col = BaseColor * lerp(1.0f, Darkening, W);
+	float Rough = lerp(Roughness, RoughnessTarget, W);
+	float3 N = MobFlattenNormal(Normal, saturate(NormalFlatten * W));
+
+	Rough = lerp(Rough, PuddleRoughness, Puddle);
+	N = MobFlattenNormal(N, Puddle);
+
+	OutNormal = N;
+	OutRoughness = saturate(Rough);
+	OutSpecular = saturate(lerp(Specular, SpecularTarget, W));
+	OutMask = W;
+	OutPuddle = Puddle;
+	return Col;
+}
+
+// ---------------------------------------------------------------------------
+// Colour variation
+// ---------------------------------------------------------------------------
+
+/**
+ * One repeatable random per object position. Wrapped into a small range before the maths runs:
+ * mobile pixel ALU is half precision by default and an unwrapped world position has already lost
+ * the low bits this needs.
+ */
+float MobHash13(float3 P)
+{
+	P = P - floor(P * (1.0f / 1024.0f)) * 1024.0f;
+	P = frac(P * 0.1031f);
+	P += dot(P, P.yzx + 33.33f);
+	return frac((P.x + P.y) * P.z);
+}
+
+/** Spreads a 0..1 random over a symmetric hue, saturation and value range. */
+float3 MobColorVariation(float3 Color, float Rand, float HueRange, float SaturationRange, float ValueRange)
+{
+	float S = Rand * 2.0f - 1.0f;
+	return MobApplyHSV(Color, S * HueRange, saturate(1.0f + S * SaturationRange), max(1.0f + S * ValueRange, 0.0f));
+}
+
+/**
+ * Low frequency world-space noise laid over the colour. This is what stops a long wall or a row of
+ * identical buildings reading as one flat tone, and it works where a per-object random cannot
+ * because it varies across a single mesh.
+ */
+float3 MobMacroVariation(float3 Color, float Noise, float3 TintA, float3 TintB, float TintAmount, float ValueAmount)
+{
+	float3 Tinted = Color * lerp(TintA, TintB, saturate(Noise));
+	Color = lerp(Color, Tinted, saturate(TintAmount));
+	return max(Color * lerp(1.0f, Noise * 2.0f, saturate(ValueAmount)), 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Distance
+// ---------------------------------------------------------------------------
+
+/**
+ * Removes normal and specular detail with distance. The project ships FXAA with no temporal
+ * filter, so anything finer than a pixel out there has nothing to resolve it and reads as a
+ * crawling sparkle. Taking it out in the material is the only place it can be fixed.
+ */
+float3 MobDistanceClamp(float3 Normal, float Roughness, float PixelDepth,
+	float FadeStart, float FadeLength, float NormalFlatten, float RoughnessFloor,
+	out float OutRoughness)
+{
+	float Fade = MobDistanceFade(PixelDepth, FadeStart, FadeLength);
+	OutRoughness = saturate(max(Roughness, RoughnessFloor * Fade));
+	return MobFlattenNormal(Normal, saturate(NormalFlatten * Fade));
+}

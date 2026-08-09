@@ -1,0 +1,210 @@
+// Copyright (c) Jared Taylor. All Rights Reserved
+
+#pragma once
+
+// Shared helpers for the surface materials. Included from Custom nodes as
+// /MobMasterMaterial/Public/MobMaterialUtil.ush (the /Project mapping is registered by the engine).
+
+#define MOB_EPS 1e-5f
+
+// ---------------------------------------------------------------------------
+// Normals
+// ---------------------------------------------------------------------------
+
+/** Rebuilds a tangent normal from the RG channels of an _NRO pack. */
+float3 MobUnpackNormal(float2 PackedRG, float Intensity, float bFlipY)
+{
+	float2 XY = PackedRG * 2.0f - 1.0f;
+	XY.y = lerp(XY.y, -XY.y, bFlipY);
+	XY *= Intensity;
+	float Z = sqrt(saturate(1.0f - dot(XY, XY)));
+	return float3(XY, Z);
+}
+
+/**
+ * Adjusts a tangent normal that the sampler already unpacked. A Normal-typed TextureSample
+ * hands back the -1..1 vector directly, so this only scales XY and renormalises rather than
+ * decoding from 0..1 like MobUnpackNormal does.
+ */
+float3 MobAdjustNormal(float3 N, float Intensity, float bFlipY)
+{
+	N.y = lerp(N.y, -N.y, bFlipY);
+	N.xy *= Intensity;
+	return normalize(N + float3(0.0f, 0.0f, MOB_EPS));
+}
+
+/** Lerps a normal toward flat. Amount of 1 is a perfectly flat surface. */
+float3 MobFlattenNormal(float3 N, float Amount)
+{
+	return normalize(lerp(N, float3(0, 0, 1), saturate(Amount)));
+}
+
+/** Whiteout blend: layers a detail normal over a base without losing either one's slope. */
+float3 MobBlendNormal(float3 Base, float3 Detail, float Amount)
+{
+	float3 Blended = normalize(float3(Base.xy + Detail.xy, Base.z * Detail.z));
+	return normalize(lerp(Base, Blended, saturate(Amount)));
+}
+
+/** Cavity as a multiplier. This is micro shadowing, so it belongs on BaseColor and Specular, never on the AO pin. */
+float3 MobApplyCavity(float3 Color, float Cavity, float Amount)
+{
+	return Color * lerp(1.0f, Cavity, saturate(Amount));
+}
+
+// ---------------------------------------------------------------------------
+// Height blending
+// ---------------------------------------------------------------------------
+
+/**
+ * Height-aware blend alpha. Feeding this into a lerp makes two layers interlock along their
+ * height detail instead of cross-fading. Contrast near 0 is a hard transition, near 1 is soft.
+ */
+float MobHeightBlendAlpha(float HeightA, float HeightB, float Alpha, float Contrast, float HeightAmount)
+{
+	// Alpha is added to the heights rather than scaling them. Scaling would leave two layers of
+	// equal height at a flat 50/50 whatever the paint weight said.
+	Contrast = max(Contrast, MOB_EPS);
+	float A = HeightA + (1.0f - Alpha);
+	float B = HeightB + Alpha;
+	float Peak = max(A, B) - Contrast;
+	float WA = max(A - Peak, 0.0f);
+	float WB = max(B - Peak, 0.0f);
+	float HeightAlpha = WB / max(WA + WB, MOB_EPS);
+
+	// Contrast only widens the band the interlock happens over; it never softens the interlock
+	// itself, so a low value always reads as a hard crunchy edge no matter how soft the brush
+	// was. Fading back toward the paint weight is what actually gives a gradient.
+	return lerp(Alpha, HeightAlpha, saturate(HeightAmount));
+}
+
+// ---------------------------------------------------------------------------
+// Terrain masks
+// ---------------------------------------------------------------------------
+
+/**
+ * 0 on flat ground, 1 past SlopeMaxDeg. Compares against the cosine directly so there is no
+ * acos in the inner loop.
+ */
+float MobSlopeMask(float3 WorldNormal, float SlopeMinDeg, float SlopeMaxDeg)
+{
+	float CosMin = cos(radians(SlopeMinDeg));
+	float CosMax = cos(radians(SlopeMaxDeg));
+	return 1.0f - smoothstep(CosMax, CosMin, WorldNormal.z);
+}
+
+/** Band mask over world Z, for waterline or snowline style gating. */
+float MobAltitudeMask(float WorldZ, float MinZ, float MaxZ, float Feather)
+{
+	Feather = max(Feather, MOB_EPS);
+	return smoothstep(MinZ, MinZ + Feather, WorldZ) * (1.0f - smoothstep(MaxZ - Feather, MaxZ, WorldZ));
+}
+
+/**
+ * Micro cavity from the blended layer height. This is the crevice between gravel stones or
+ * inside a footprint - the places water pools and moss takes hold. Derivative-free, so unlike a
+ * screen-space curvature it does not swim under camera motion.
+ */
+float MobMicroCavity(float BlendedHeight, float Bias, float Contrast)
+{
+	float Cavity = saturate(1.0f - BlendedHeight + Bias);
+	return pow(Cavity, max(Contrast, MOB_EPS));
+}
+
+/**
+ * Coarse concavity from the divergence of the world normal - valleys read positive, ridges
+ * negative. Screen-space, so it weakens with distance and is only usable at low intensity as a
+ * flavour on top of MobMicroCavity.
+ */
+float MobMacroConcavity(float3 WorldNormal, float Intensity)
+{
+	float Divergence = ddx(WorldNormal.x) + ddy(WorldNormal.y);
+	return saturate(-Divergence * Intensity * 64.0f);
+}
+
+/**
+ * Faces turned away from the sun. SunDirection is expected to point from the sky toward the
+ * ground, read from a parameter collection so this stays a per-level constant rather than
+ * something that has to track a moving light.
+ */
+float MobShadeMask(float3 WorldNormal, float3 SunDirection, float Softness)
+{
+	float Facing = dot(normalize(WorldNormal), -normalize(SunDirection));
+	return 1.0f - smoothstep(-max(Softness, MOB_EPS), max(Softness, MOB_EPS), Facing);
+}
+
+// ---------------------------------------------------------------------------
+// Triplanar
+// ---------------------------------------------------------------------------
+
+/** Projection weights, normalised, biased toward whichever axis the surface faces. */
+float3 MobTriplanarWeights(float3 WorldNormal, float Sharpness)
+{
+	float3 W = pow(abs(WorldNormal), max(Sharpness, 1.0f));
+	return W / max(W.x + W.y + W.z, MOB_EPS);
+}
+
+/** How much a pixel should switch from top-down projection to triplanar. */
+float MobTriplanarSteep(float3 WorldNormal, float StartDeg, float EndDeg)
+{
+	return MobSlopeMask(WorldNormal, StartDeg, EndDeg);
+}
+
+// ---------------------------------------------------------------------------
+// Colour
+// ---------------------------------------------------------------------------
+
+/**
+ * Hue rotation, saturation and value in one pass. Uses the YIQ rotation rather than a full
+ * RGB->HSV->RGB round trip: no branches, no atan, and the artist-facing behaviour is the same.
+ */
+float3 MobApplyHSV(float3 Color, float HueShiftDeg, float Saturation, float Value)
+{
+	float Angle = radians(HueShiftDeg);
+	float S = sin(Angle);
+	float C = cos(Angle);
+
+	// RGB -> YIQ, rotate IQ by the hue angle, YIQ -> RGB, folded into one matrix.
+	float3 Y = float3(0.299f, 0.587f, 0.114f);
+	float3 I = float3(0.596f, -0.274f, -0.322f);
+	float3 Q = float3(0.211f, -0.523f, 0.312f);
+
+	float Luma = dot(Color, Y);
+	float Ic = dot(Color, I);
+	float Qc = dot(Color, Q);
+
+	float Ir = Ic * C - Qc * S;
+	float Qr = Ic * S + Qc * C;
+
+	float3 Rotated = Luma + Ir * float3(0.956f, -0.272f, -1.106f) + Qr * float3(0.621f, -0.647f, 1.703f);
+	Rotated = max(Rotated, 0.0f);
+
+	float RotatedLuma = dot(Rotated, Y);
+	return max((lerp(RotatedLuma.xxx, Rotated, Saturation)) * Value, 0.0f);
+}
+
+/** Contrast around a fixed pivot. Cheaper than the engine's CheapContrast and pivots on grey. */
+float3 MobContrast(float3 Color, float Contrast, float Pivot)
+{
+	return max((Color - Pivot) * Contrast + Pivot, 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Distance
+// ---------------------------------------------------------------------------
+
+/**
+ * 0 up close, 1 past Start + Falloff. Drives the distance normal flatten and roughness clamp.
+ * This project ships FXAA with no temporal filter, so distant normal and specular detail has
+ * nothing to resolve it and has to be removed in the material instead.
+ */
+float MobDistanceFade(float PixelDepth, float Start, float Falloff)
+{
+	return smoothstep(Start, Start + max(Falloff, MOB_EPS), PixelDepth);
+}
+
+/** Remap into a min/max window. Preserves contrast where a plain multiply would crush it. */
+float MobRemap(float Value, float OutMin, float OutMax)
+{
+	return lerp(OutMin, OutMax, saturate(Value));
+}
