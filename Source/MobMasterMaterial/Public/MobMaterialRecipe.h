@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "MobMaterialRecipe.generated.h"
 
 UENUM(BlueprintType)
@@ -107,12 +108,14 @@ public:
 	FDirectoryPath GrassTypePath;
 
 	/**
-	 * Parameter collection carrying the global wetness the surface master reads. Created if absent.
-	 * Point several recipes at one collection and their materials go wet together.
+	 * Parameter collection carrying the global wetness the surface master reads.
+	 *
+	 * Point several recipes at one collection and their materials go wet together. Leave it empty
+	 * and generating creates one beside the master, then fills this in.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
 		meta=(EditCondition="Kind == EMobMaterialKind::Surface", EditConditionHides))
-	FString WeatherCollection = TEXT("/MobMasterMaterial/MPC_MobWeather");
+	TSoftObjectPtr<UMaterialParameterCollection> WeatherCollection;
 
 	/** Whether there is enough here to author anything. */
 	UFUNCTION(BlueprintCallable, Category="Recipe")

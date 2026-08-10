@@ -52,6 +52,9 @@ BASE_TEX_MASK = '/MobMasterMaterial/Textures/T_BaseWhite'
 WEATHER_MPC = '/MobMasterMaterial/MPC_MobWeather'
 WEATHER_PARAM = 'Wetness'
 
+# Set by mob_recipe so a newly created collection can be written back onto the recipe.
+RECIPE = None
+
 LAYERS = ['Layer0', 'Layer1', 'Layer2']
 
 FIT = unreal.FunctionInputType
@@ -843,6 +846,13 @@ def ensure_weather_parameters():
     if added:
         mpc.set_editor_property('scalar_parameters', existing)
         save(mpc)
+
+    # So the toolbar can find it, and so a second generate reuses this one rather than making
+    # another beside the next master.
+    if RECIPE is not None and RECIPE.get_editor_property('weather_collection') is None:
+        RECIPE.set_editor_property('weather_collection', mpc)
+        save(RECIPE)
+        _log('recipe now points at %s' % WEATHER_MPC)
     _log('weather parameters ready%s' % (' (added %s)' % ', '.join(added) if added else ''))
     return mpc
 

@@ -101,9 +101,26 @@ def apply_surface(module, recipe):
 
     _apply_common(module, recipe)
 
-    collection = str(recipe.get_editor_property('weather_collection') or '').strip().rstrip('/')
-    if collection:
-        module.WEATHER_MPC = collection
+    # The property resolves to the loaded collection, whose repr ends in its class name, so parsing
+    # the string is a trap: ask the object for its path and drop the object suffix.
+    collection = recipe.get_editor_property('weather_collection')
+    path = ''
+    if collection is not None:
+        try:
+            path = str(collection.get_path_name())
+        except Exception:
+            try:
+                path = str(collection.to_soft_object_path().to_string())
+            except Exception:
+                path = ''
+        path = path.split('.')[0].strip()
+    if path:
+        module.WEATHER_MPC = path
+    else:
+        # Unset: put one beside the master rather than in the plugin, and hand the recipe back so
+        # the generator can fill the field in once it has created it.
+        module.WEATHER_MPC = '%s/MPC_%sWeather' % (module.ROOT, module.MASTER_NAME)
+    module.RECIPE = recipe
 
     module._log('%s: %s, weather %s' % (module.MASTER_NAME, module.ROOT, module.WEATHER_MPC))
     return module

@@ -131,9 +131,9 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 	for (const FAssetData& Asset : Recipes)
 	{
 		if (const UMobMaterialRecipe* Recipe = Cast<UMobMaterialRecipe>(Asset.GetAsset());
-			Recipe && Recipe->Kind == EMobMaterialKind::Surface && !Recipe->WeatherCollection.IsEmpty())
+			Recipe && Recipe->Kind == EMobMaterialKind::Surface && !Recipe->WeatherCollection.IsNull())
 		{
-			Collections.AddUnique(FSoftObjectPath(Recipe->WeatherCollection));
+			Collections.AddUnique(Recipe->WeatherCollection.ToSoftObjectPath());
 		}
 	}
 

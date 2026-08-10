@@ -40,7 +40,7 @@ UE5.8+
 
 ## Features
 
-**Authored from a recipe, not hand-wired.** A recipe is an asset saying what to build and where, so a project carries as many masters as it needs. Each rebuilt with a clicks.
+**Authored from a recipe, not hand-wired.** A recipe is an asset saying what to build and where, so a project carries as many masters as it needs. Each rebuilt with a click. *You never have to touch a base material.*
 
 **Nothing you turn off is paid for.** Every feature is gated by a static bool on a material function input.
 
