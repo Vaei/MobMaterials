@@ -153,6 +153,17 @@ public:
 	bool bPrimitiveData = true;
 
 	/**
+	 * Adds debug views: layer weights, cavity, normal, wetness, height and vertex colour, sent to
+	 * emissive with the base colour blacked out so the value is seen rather than the value times
+	 * whatever the light was doing.
+	 *
+	 * A blend you cannot see is a blend you cannot fix. Costs nothing until an instance asks.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
+		meta=(EditCondition="Kind == EMobMaterialKind::Surface", EditConditionHides))
+	bool bDebugViews = true;
+
+	/**
 	 * Parameter collection carrying the global wetness the surface master reads.
 	 *
 	 * Point several recipes at one collection and their materials go wet together. Leave it empty

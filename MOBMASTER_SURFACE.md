@@ -18,6 +18,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The landscape master 
 | [Detail](#detail) | the second normal that makes a surface hold up close |
 | [Distance](#distance) | the clamp that stops speculars crawling |
 | [Blend modes](#blend-modes) | opaque, masked, two-sided |
+| [Debug views](#debug-views) | seeing the blend instead of guessing at it |
 | [Cost](#cost) | what each feature actually costs, measured |
 
 ---
@@ -197,6 +198,23 @@ The opacity mask is read from **alpha**, which skips the sRGB decode, so the thr
 
 > [!CAUTION]
 > Masked geometry costs real overdraw wherever the project runs without a depth prepass. Stay opaque unless the silhouette needs it.
+
+## Debug views
+
+`bDebug`, then `DebugMode`:
+
+| | |
+|---|---|
+| 1 | layer weights, one per channel. Red is layer 0, green layer 1, blue layer 2 |
+| 2 | cavity |
+| 3 | blended normal |
+| 4 | wetness mask |
+| 5 | blended height |
+| 6 | vertex colour, as painted |
+
+The result goes to **emissive** with base colour blacked out, so what you see is the value itself rather than the value times whatever the light was doing.
+
+Layer weights are the one worth reaching for. A wrong weight is invisible in the final image precisely when it matters, because it looks like a texture choice rather than a mistake - and the weights are the one thing no other view can reconstruct, which is why the blend hands them out.
 
 ## Cost
 

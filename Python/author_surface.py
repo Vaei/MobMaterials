@@ -62,6 +62,7 @@ INCLUDE_DETAIL = True
 INCLUDE_TILE_BREAK = True
 INCLUDE_PARALLAX = False
 INCLUDE_PRIMITIVE_DATA = True
+INCLUDE_DEBUG = True
 
 LAYERS = ['Layer0', 'Layer1', 'Layer2']
 
@@ -570,6 +571,7 @@ OutRoughness = saturate(dot(float3(Roughness0, Roughness1, Roughness2), W));
 OutMetallic = saturate(dot(float3(Metallic0, Metallic1, Metallic2), W));
 OutCavity = saturate(dot(float3(Cavity0, Cavity1, Cavity2), W));
 OutHeight = saturate(dot(float3(Height0, Height1, Height2), W));
+OutWeights = W;
 
 return MobBlend3(BaseColor0, BaseColor1, BaseColor2, W);
 """
@@ -635,7 +637,7 @@ def build_blend_function():
     blend = custom(fn, _CODE_BLEND3, CMOT.CMOT_FLOAT3, blend_inputs,
                    [('OutNormal', CMOT.CMOT_FLOAT3), ('OutRoughness', CMOT.CMOT_FLOAT1),
                     ('OutMetallic', CMOT.CMOT_FLOAT1), ('OutCavity', CMOT.CMOT_FLOAT1),
-                    ('OutHeight', CMOT.CMOT_FLOAT1)],
+                    ('OutHeight', CMOT.CMOT_FLOAT1), ('OutWeights', CMOT.CMOT_FLOAT3)],
                    -200, -300, 'Height-aware three way blend')
     for pin in blend_inputs:
         src = routed.get(pin, ins.get(pin))
@@ -644,6 +646,8 @@ def build_blend_function():
     outs = ['', 'OutNormal', 'OutRoughness', 'OutMetallic', 'OutCavity', 'OutHeight']
     for i, name in enumerate(_LAYER_OUTPUTS):
         link(blend, outs[i], fn_output(fn, name, 200, -300 + 60 * i, i), '')
+    # Only the blend knows these, and a debug view of a weight is the whole point of having one.
+    link(blend, 'OutWeights', fn_output(fn, 'Weights', 200, 60, len(_LAYER_OUTPUTS)), '')
 
     _finish_fn(fn)
     save(fn)
@@ -658,6 +662,10 @@ def build_blend_function():
 # Per instance, set on the component, so one material instance serves thousands of actors that all
 # look different. A hash of position cannot do that: it gives every copy a different tint, but
 # never the tint somebody chose.
+_CODE_DEBUG = """
+return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour);
+"""
+
 _CODE_PRIMITIVE = """
 float3 Col = BaseColor * lerp(1.0f.xxx, Tint, saturate(TintAmount));
 OutRoughness = saturate(Roughness + RoughnessOffset);
@@ -1066,6 +1074,7 @@ GROUP_PRIMITIVE = '05 - Per Instance'
 GROUP_DETAIL = '45 - Detail'
 GROUP_EMISSIVE = '50 - Emissive'
 GROUP_DISTANCE = '60 - Distance'
+GROUP_DEBUG = '90 - Debug'
 
 _LAYER_GROUPS = ['01 - Layer 0', '02 - Layer 1', '03 - Layer 2']
 
@@ -1388,13 +1397,40 @@ def build_master_material():
     mask_tex.set_editor_property('group', GROUP_GLOBAL)
     link(uv, '', mask_tex, 'UVs')
 
+    # --- debug ------------------------------------------------------------
+    base_src, base_out = final, 'BaseColor'
+    emissive_src, emissive_out = emissive, 'Emissive'
+
+    if INCLUDE_DEBUG:
+        dbg = custom(mat, _CODE_DEBUG, CMOT.CMOT_FLOAT3,
+                     ['Mode', 'Weights', 'Cavity', 'Normal', 'Wetness', 'Height', 'VertexColour'],
+                     [], 300, 800, 'Debug view')
+        link(_param_scalar(mat, 'DebugMode', 1.0, GROUP_DEBUG, 0, 800, 1), '', dbg, 'Mode')
+        link(blend, 'Weights', dbg, 'Weights')
+        link(blend, 'Cavity', dbg, 'Cavity')
+        link(blend, 'Normal', dbg, 'Normal')
+        link(wet, 'Mask', dbg, 'Wetness')
+        link(blend, 'Height', dbg, 'Height')
+        link(vcol, '', dbg, 'VertexColour')
+
+        black = _expr(mat, unreal.MaterialExpressionConstant3Vector, 0, 900)
+        black.set_editor_property('constant', unreal.LinearColor(0.0, 0.0, 0.0, 1.0))
+
+        # Sent to emissive and the base colour blacked out, so what you see is the value itself
+        # rather than the value times whatever the light happened to be doing.
+        base_src = _switch_param(mat, 'bDebug', black, '', final, 'BaseColor', GROUP_DEBUG, 500, 900)
+        base_out = ''
+        emissive_src = _switch_param(mat, 'bDebug', dbg, '', emissive, 'Emissive', GROUP_DEBUG,
+                                     500, 800)
+        emissive_out = ''
+
     # --- outputs ----------------------------------------------------------
-    MEL.connect_material_property(final, 'BaseColor', MP.MP_BASE_COLOR)
+    MEL.connect_material_property(base_src, base_out, MP.MP_BASE_COLOR)
     MEL.connect_material_property(final, 'Normal', MP.MP_NORMAL)
     MEL.connect_material_property(final, 'Roughness', MP.MP_ROUGHNESS)
     MEL.connect_material_property(final, 'Specular', MP.MP_SPECULAR)
     MEL.connect_material_property(blend, 'Metallic', MP.MP_METALLIC)
-    MEL.connect_material_property(emissive, 'Emissive', MP.MP_EMISSIVE_COLOR)
+    MEL.connect_material_property(emissive_src, emissive_out, MP.MP_EMISSIVE_COLOR)
     MEL.connect_material_property(mask_tex, 'A', MP.MP_OPACITY_MASK)
     # Ambient occlusion is deliberately left at 1. Cavity is already in BaseColor and Specular, and
     # the renderer supplies its own occlusion; feeding a baked map here darkens twice.
@@ -1442,7 +1478,7 @@ _SWITCH_DEFAULTS = {
     'Layer0_ParallaxOcclusion': False, 'Layer1_ParallaxOcclusion': False,
     'Layer2_ParallaxOcclusion': False,
     'bWetness': False, 'bColorVariation': False, 'bMacroVariation': False, 'bEmissive': False,
-    'bDetail': False, 'bPrimitiveData': False,
+    'bDetail': False, 'bPrimitiveData': False, 'bDebug': False,
 }
 
 
@@ -1459,6 +1495,8 @@ def build_material_instances():
             if '_Parallax' in switch and not INCLUDE_PARALLAX:
                 continue
             if switch == 'bPrimitiveData' and not INCLUDE_PRIMITIVE_DATA:
+                continue
+            if switch == 'bDebug' and not INCLUDE_DEBUG:
                 continue
             MEL.set_material_instance_static_switch_parameter_value(
                 mi, switch, bool(overrides.get(switch, default)))

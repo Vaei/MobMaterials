@@ -330,6 +330,33 @@ float3 MobMacroVariation(float3 Color, float Noise, float3 TintA, float3 TintB, 
 }
 
 // ---------------------------------------------------------------------------
+// Debug
+// ---------------------------------------------------------------------------
+
+/**
+ * Replaces the shaded result with whichever intermediate the artist asked to see.
+ *
+ * A blend you cannot see is a blend you cannot fix: layer weights in particular are invisible in
+ * the final image precisely when they are wrong, because a bad weight looks like a texture
+ * choice. Sent to emissive by the caller so it survives the lighting.
+ *
+ *   1 layer weights, red green blue per layer   4 wetness
+ *   2 cavity                                    5 height
+ *   3 blended normal                            6 vertex colour, as painted
+ */
+float3 MobDebugView(int Mode, float3 Weights, float Cavity, float3 Normal, float Wetness,
+	float Height, float3 VertexColour)
+{
+	if (Mode == 1) { return saturate(Weights); }
+	if (Mode == 2) { return saturate(Cavity).xxx; }
+	if (Mode == 3) { return saturate(Normal * 0.5f + 0.5f); }
+	if (Mode == 4) { return float3(saturate(Wetness), 0.0f, 0.0f); }
+	if (Mode == 5) { return saturate(Height).xxx; }
+	if (Mode == 6) { return saturate(VertexColour); }
+	return 0.0f.xxx;
+}
+
+// ---------------------------------------------------------------------------
 // Distance
 // ---------------------------------------------------------------------------
 
