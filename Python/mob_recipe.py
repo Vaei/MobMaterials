@@ -126,6 +126,7 @@ def apply_surface(module, recipe):
     module.INCLUDE_PARALLAX = bool(recipe.get_editor_property('parallax'))
     module.INCLUDE_PRIMITIVE_DATA = bool(recipe.get_editor_property('primitive_data'))
     module.INCLUDE_DEBUG = bool(recipe.get_editor_property('debug_views'))
+    module.FOLIAGE = bool(recipe.get_editor_property('foliage'))
 
     module._log('%s: %s, weather %s, detail %s'
                 % (module.MASTER_NAME, module.ROOT, module.WEATHER_MPC,
@@ -136,4 +137,6 @@ def apply_surface(module, recipe):
     module._log('  primitive data %s, debug %s'
                 % ('on' if module.INCLUDE_PRIMITIVE_DATA else 'off',
                    'on' if module.INCLUDE_DEBUG else 'off'))
+    if module.FOLIAGE:
+        module._log('  foliage: masked, two sided, wind')
     return module

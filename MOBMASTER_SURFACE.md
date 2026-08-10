@@ -18,6 +18,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The landscape master 
 | [Detail](#detail) | the second normal that makes a surface hold up close |
 | [Distance](#distance) | the clamp that stops speculars crawling |
 | [Blend modes](#blend-modes) | opaque, masked, two-sided |
+| [Foliage](#foliage) | a different master, and why it has to be |
 | [Debug views](#debug-views) | seeing the blend instead of guessing at it |
 | [Cost](#cost) | what each feature actually costs, measured |
 
@@ -215,6 +216,29 @@ The opacity mask is read from **alpha**, which skips the sRGB decode, so the thr
 The result goes to **emissive** with base colour blacked out, so what you see is the value itself rather than the value times whatever the light was doing.
 
 Layer weights are the one worth reaching for. A wrong weight is invisible in the final image precisely when it matters, because it looks like a texture choice rather than a mistake - and the weights are the one thing no other view can reconstruct, which is why the blend hands them out.
+
+## Foliage
+
+Tick **Foliage** on a recipe and it authors a foliage master instead of a standard one: masked, two-sided, two-sided-foliage shading, a subsurface colour for light coming through a leaf, and wind on world position offset.
+
+This is the one feature that **cannot** be a switch. Shading model, two-sidedness and blend mode are material properties rather than parameters, so foliage has to be a material of its own. Point a second recipe at the same output folder with a different asset name and generate - you get `M_MyFoliage` beside `M_MySurface`, sharing one copy of the functions.
+
+### Wind
+
+`bWind`, then two scales of the same motion:
+
+| | |
+|---|---|
+| `WindDirection` | which way the sway goes |
+| `WindStrength`, `WindSpeed` | the trunk sway, slow, carrying the whole plant |
+| `WindFlutterStrength`, `WindFlutterSpeed` | the leaf flutter, fast and small, across the sway direction so leaves do not all travel along one line |
+
+Movement is weighted by height above the object's own origin, so the base stays planted and the tips move - no skeleton, no painted weight needed. **Vertex colour red** scales it where it has been painted; unpainted it is white, which is already the tips-move-most case.
+
+Phase comes from world position, so two plants side by side never move together.
+
+> [!NOTE]
+> Wind is world position offset, which runs in the vertex shader on every vertex whether or not the plant is on screen edge. Foliage meshes should be low enough poly that this is free; a dense mesh with wind is a vertex-bound mesh.
 
 ## Cost
 

@@ -66,6 +66,15 @@ UE5.8+
 - **Vertex paint with no fill step.** Black adds, white is neutral, so a mesh that was never painted arrives as the base layer instead of covered in the top one, soaking wet
 - **Every copy of a prop looks different** from a hash of where it stands - no per-actor setup, no extra instances
 
+### Surfaces that hold up close, and instances that differ
+
+- **A detail normal** over the blended result, faded on the same curve the distance clamp uses, because it is the same high-frequency detail that crawls at range
+- **A tiling break bound to distance** - a second incommensurate tiling overlaid, so a wall keeps its detail near and stops reading as a grid far away
+- **Parallax, cheap or raymarched.** One-step offset sells brick and cobbles for a multiply and an add; occlusion walks the height field when a hero surface earns it
+- **Per-instance tint, roughness and wetness from custom primitive data**, so one material instance serves a thousand actors that all differ, with no new permutations and nothing to author per actor
+- **Foliage with wind** - masked, two-sided, light through the leaf, and two scales of motion weighted so the base stays planted and the tips move
+- **Debug views** for layer weights, cavity, wetness and height, because a blend you cannot see is a blend you cannot fix
+
 ### Built for the mobile forward path
 
 - **4 samplers in every permutation.** Every sample is Shared:Wrap, so the 16-sampler limit never binds however many layers are on

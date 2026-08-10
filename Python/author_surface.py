@@ -64,6 +64,9 @@ INCLUDE_PARALLAX = False
 INCLUDE_PRIMITIVE_DATA = True
 INCLUDE_DEBUG = True
 
+# Foliage is a whole different master, not a switch: see build_master_material.
+FOLIAGE = False
+
 LAYERS = ['Layer0', 'Layer1', 'Layer2']
 
 FIT = unreal.FunctionInputType
@@ -662,6 +665,11 @@ def build_blend_function():
 # Per instance, set on the component, so one material instance serves thousands of actors that all
 # look different. A hash of position cannot do that: it gives every copy a different tint, but
 # never the tint somebody chose.
+_CODE_WIND = """
+return MobWind(WorldPos, ObjectPos, Direction, Time, Strength, Speed,
+               FlutterStrength, FlutterSpeed, Weight);
+"""
+
 _CODE_DEBUG = """
 return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour);
 """
@@ -1074,6 +1082,7 @@ GROUP_PRIMITIVE = '05 - Per Instance'
 GROUP_DETAIL = '45 - Detail'
 GROUP_EMISSIVE = '50 - Emissive'
 GROUP_DISTANCE = '60 - Distance'
+GROUP_FOLIAGE = '70 - Foliage'
 GROUP_DEBUG = '90 - Debug'
 
 _LAYER_GROUPS = ['01 - Layer 0', '02 - Layer 1', '03 - Layer 2']
@@ -1168,9 +1177,18 @@ def build_master_material():
     project, which makes masked geometry cost real overdraw.
     """
     mat = get_or_create_material(ROOT, 'M_' + MASTER_NAME)
-    mat.set_editor_property('blend_mode', unreal.BlendMode.BLEND_OPAQUE)
-    mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
-    mat.set_editor_property('two_sided', False)
+
+    # Shading model, two-sidedness and blend mode are material properties, not switches, so a
+    # foliage master is a different material rather than a toggle on this one. That is the right
+    # shape anyway: foliage wants different defaults the whole way down.
+    if FOLIAGE:
+        mat.set_editor_property('blend_mode', unreal.BlendMode.BLEND_MASKED)
+        mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_TWO_SIDED_FOLIAGE)
+        mat.set_editor_property('two_sided', True)
+    else:
+        mat.set_editor_property('blend_mode', unreal.BlendMode.BLEND_OPAQUE)
+        mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
+        mat.set_editor_property('two_sided', False)
 
     # --- shared inputs ----------------------------------------------------
     uv = _expr(mat, unreal.MaterialExpressionTextureCoordinate, -3600, -1200)
@@ -1396,6 +1414,35 @@ def build_master_material():
     mask_tex.set_editor_property('sampler_type', ST.SAMPLERTYPE_COLOR)
     mask_tex.set_editor_property('group', GROUP_GLOBAL)
     link(uv, '', mask_tex, 'UVs')
+
+    # --- foliage ----------------------------------------------------------
+    if FOLIAGE:
+        time_node = _expr(mat, unreal.MaterialExpressionTime, -1000, 1200)
+        wind = custom(mat, _CODE_WIND, CMOT.CMOT_FLOAT3,
+                      ['WorldPos', 'ObjectPos', 'Direction', 'Time', 'Strength', 'Speed',
+                       'FlutterStrength', 'FlutterSpeed', 'Weight'],
+                      [], -500, 1200, 'Wind')
+        link(worldpos, '', wind, 'WorldPos')
+        link(objectpos, '', wind, 'ObjectPos')
+        link(time_node, '', wind, 'Time')
+        link(_param_vector(mat, 'WindDirection', (1.0, 0.0, 0.0), GROUP_FOLIAGE, -1000, 1000, 0),
+             '', wind, 'Direction')
+        for name, default, sort in (('WindStrength', 6.0, 1), ('WindSpeed', 1.2, 2),
+                                    ('WindFlutterStrength', 2.5, 3), ('WindFlutterSpeed', 5.0, 4)):
+            link(_param_scalar(mat, name, default, GROUP_FOLIAGE, -1000, 1050 + sort * 50, sort),
+                 '', wind, name.replace('Wind', '').replace('Flutter', 'Flutter'))
+        # Painted red is the sway weight; unpainted white already means the tips move most.
+        link(vcol, 'R', wind, 'Weight')
+
+        gate = _switch_param(mat, 'bWind', wind, '',
+                             _expr(mat, unreal.MaterialExpressionConstant3Vector, -500, 1320),
+                             '', GROUP_FOLIAGE, -300, 1200)
+        MEL.connect_material_property(gate, '', MP.MP_WORLD_POSITION_OFFSET)
+
+        # Two-sided foliage reads this as the colour of light coming through a leaf.
+        MEL.connect_material_property(
+            _param_vector(mat, 'SubsurfaceColor', (0.15, 0.35, 0.08), GROUP_FOLIAGE, -1000, 1300, 10),
+            '', MP.MP_SUBSURFACE_COLOR)
 
     # --- debug ------------------------------------------------------------
     base_src, base_out = final, 'BaseColor'

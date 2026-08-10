@@ -330,6 +330,40 @@ float3 MobMacroVariation(float3 Color, float Noise, float3 TintA, float3 TintB, 
 }
 
 // ---------------------------------------------------------------------------
+// Wind
+// ---------------------------------------------------------------------------
+
+/**
+ * World position offset for foliage, as two scales of the same motion.
+ *
+ * The trunk sway carries the whole plant and is slow. The leaf flutter is fast, small, and
+ * weighted by how far a vertex is from where the plant is anchored - so the base stays put and the
+ * tips move, without needing a skeleton or a painted weight. Vertex colour red drives that weight
+ * when it has been painted; unpainted it is white, which is the tips-move-most case anyway.
+ *
+ * Phase comes from world position, so two plants side by side never move together.
+ */
+float3 MobWind(float3 WorldPos, float3 ObjectPos, float3 Direction, float Time,
+	float Strength, float Speed, float FlutterStrength, float FlutterSpeed, float Weight)
+{
+	const float3 FromBase = WorldPos - ObjectPos;
+	const float Phase = dot(ObjectPos, float3(0.017f, 0.023f, 0.0f));
+
+	// Height above the anchor, in metres, so a taller plant sways further at the top.
+	const float Reach = saturate(FromBase.z * 0.01f) * saturate(Weight);
+
+	const float3 Dir = normalize(Direction + float3(0.0f, 0.0f, MOB_EPS));
+	const float Sway = sin(Time * Speed + Phase) * Strength * Reach;
+
+	// Cross-axis flutter, so leaves do not all travel along one line.
+	const float3 Side = normalize(cross(Dir, float3(0.0f, 0.0f, 1.0f)) + float3(MOB_EPS, 0.0f, 0.0f));
+	const float Flutter = sin(Time * FlutterSpeed + Phase * 7.3f + FromBase.x + FromBase.y)
+		* FlutterStrength * Reach;
+
+	return Dir * Sway + Side * Flutter;
+}
+
+// ---------------------------------------------------------------------------
 // Debug
 // ---------------------------------------------------------------------------
 
