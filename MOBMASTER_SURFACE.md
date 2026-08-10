@@ -9,6 +9,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The landscape master 
 | [Vertex paint](#vertex-paint) | which channel drives what, and why black adds |
 | [Projection](#projection) | mesh UV or triplanar, per layer |
 | [Tiling break](#tiling-break) | stopping a tiled surface reading as a grid at range |
+| [Parallax](#parallax) | depth without geometry, cheap and expensive |
 | [Wetness](#wetness) | one global value, and what it does to a surface |
 | [Colour variation](#colour-variation) | per object, and across a single mesh |
 | [Cavity](#cavity) | micro shadowing, and why it never reaches the AO pin |
@@ -87,6 +88,29 @@ The two tilings combine as an **overlay**, not a lerp. A lerp of two scales halv
 **Mesh-UV path only.** With triplanar on it does nothing: that already samples three ways, and breaking it too would be nine taps to solve a repeat the projection has largely hidden.
 
 Three extra samples on any layer that uses it. Leave **Distance Tiling Break** off on the recipe and it is not in the master at all.
+
+## Parallax
+
+Two modes per layer, both shifting the UV along the view direction so a flat surface reads as though it has depth. Neither changes the silhouette: at a grazing angle the edge is still flat, which is the honest limit of the trick.
+
+`LayerN_Parallax` turns it on. `LayerN_ParallaxOcclusion` picks the expensive mode.
+
+| | |
+|---|---|
+| **Offset** (default) | one step. A multiply and an add on top of one extra height tap. Sells brick, cobbles and plank gaps at anything but a grazing angle. This is the one to reach for here |
+| **Occlusion** | raymarched. Walks the view ray through the height field until it goes under, then refines between the last two samples so the step count does not band. Genuinely expensive |
+
+| | |
+|---|---|
+| `ParallaxAmount` | depth in UV units. Small - 0.02 to 0.06. Past that the surface swims |
+| `ParallaxSteps` | raymarch steps, occlusion only |
+
+Depth comes from the CRM red channel, the same cavity the layers blend against, tapped once at the unshifted coordinate before the offset is applied - so parallax costs one extra sample even in the cheap mode.
+
+> [!CAUTION]
+> Occlusion mode is the **only** thing in either master that spends a sampler slot. A raymarch cannot be expressed as graph taps, so its Custom node samples the height texture itself and brings its own sampler. Everything else here shares one. Budget for it, and do not put it on more than a hero surface.
+
+Leave **Parallax** off on the recipe and neither mode is in the master.
 
 ## Wetness
 

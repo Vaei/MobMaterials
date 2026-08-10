@@ -123,9 +123,12 @@ def apply_surface(module, recipe):
     module.RECIPE = recipe
     module.INCLUDE_DETAIL = bool(recipe.get_editor_property('detail_maps'))
     module.INCLUDE_TILE_BREAK = bool(recipe.get_editor_property('distance_tiling_break'))
+    module.INCLUDE_PARALLAX = bool(recipe.get_editor_property('parallax'))
 
     module._log('%s: %s, weather %s, detail %s'
                 % (module.MASTER_NAME, module.ROOT, module.WEATHER_MPC,
                    'on' if module.INCLUDE_DETAIL else 'off'))
-    module._log('  tiling break %s' % ('on' if module.INCLUDE_TILE_BREAK else 'off'))
+    module._log('  tiling break %s, parallax %s'
+                % ('on' if module.INCLUDE_TILE_BREAK else 'off',
+                   'on' if module.INCLUDE_PARALLAX else 'off'))
     return module

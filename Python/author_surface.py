@@ -60,6 +60,7 @@ RECIPE = None
 # switched off, so it costs no parameters and no graph.
 INCLUDE_DETAIL = True
 INCLUDE_TILE_BREAK = True
+INCLUDE_PARALLAX = False
 
 LAYERS = ['Layer0', 'Layer1', 'Layer2']
 
@@ -301,6 +302,21 @@ return MobPrepMeshUV(UV, UVScale * TileBreakScale, UVRotation + 37.0f,
                      float2(UVOffsetU, UVOffsetV) + 0.37f);
 """
 
+_CODE_VIEW_TANGENT = """
+return MobWorldToTangent(CameraVector, Parameters.TangentToWorld);
+"""
+
+_CODE_PARALLAX_CHEAP = """
+return MobParallaxOffset(UV, ViewTangent, Height, Amount);
+"""
+
+# The one place a Custom node samples a texture itself: a raymarch cannot be expressed as graph
+# taps. It brings its own sampler with it, so this is also the one thing here that spends a
+# sampler slot.
+_CODE_PARALLAX_POM = """
+return MobParallaxOcclusion(HeightTex, HeightTexSampler, UV, ViewTangent, Amount, (int)Steps, 0.0f);
+"""
+
 _CODE_TILEBREAK = """
 return MobTileBreak(Base, Second,
     MobTileBreakAmount(PixelDepth, TileBreakStart, TileBreakFalloff, TileBreakAmount));
@@ -347,6 +363,8 @@ _LAYER_CONTROLS = [
     ('TileBreakStart', FIT.FUNCTION_INPUT_SCALAR, 1500.0, 17, 'Where the second tiling starts coming in'),
     ('TileBreakFalloff', FIT.FUNCTION_INPUT_SCALAR, 4000.0, 18, ''),
     ('TileBreakAmount', FIT.FUNCTION_INPUT_SCALAR, 0.7, 19, ''),
+    ('ParallaxAmount', FIT.FUNCTION_INPUT_SCALAR, 0.04, 25, 'Depth in UV units. Small: 0.02 to 0.06'),
+    ('ParallaxSteps', FIT.FUNCTION_INPUT_SCALAR, 16.0, 26, 'Raymarch steps, occlusion mode only'),
     ('NormalIntensity', FIT.FUNCTION_INPUT_SCALAR, 1.0, 20, ''),
     ('NormalFlipY', FIT.FUNCTION_INPUT_SCALAR, 0.0, 21, '1 for a DirectX-convention normal map'),
     ('RoughnessMin', FIT.FUNCTION_INPUT_SCALAR, 0.0, 30, ''),
@@ -401,6 +419,11 @@ def build_layer_function():
     y += 50
     ins['bTriplanar'] = fn_input(fn, 'bTriplanar', FIT.FUNCTION_INPUT_STATIC_BOOL, -1600, y, 90)
     ins['bTileBreak'] = fn_input(fn, 'bTileBreak', FIT.FUNCTION_INPUT_STATIC_BOOL, -1600, y + 50, 91)
+    ins['bParallax'] = fn_input(fn, 'bParallax', FIT.FUNCTION_INPUT_STATIC_BOOL, -1600, y + 100, 92)
+    ins['bParallaxOcclusion'] = fn_input(fn, 'bParallaxOcclusion', FIT.FUNCTION_INPUT_STATIC_BOOL,
+                                         -1600, y + 150, 93)
+    ins['CameraVector'] = fn_input(fn, 'CameraVector', FIT.FUNCTION_INPUT_VECTOR3, -1600, y + 200, 9,
+                                   default=(0.0, 0.0, 1.0))
 
     uv_inputs = ['UV', 'UVScale', 'UVRotation', 'UVOffsetU', 'UVOffsetV']
     coords = custom(fn, _CODE_LAYER_UV, CMOT.CMOT_FLOAT2, uv_inputs, [],
@@ -417,6 +440,34 @@ def build_layer_function():
     for pin in tri_inputs:
         link(ins[pin], '', tri, pin)
 
+    # Height has to be known before the offset can be applied, so the depth channel is tapped once
+    # at the unshifted coordinate. Both parallax nodes hang off that, and both prune with it when
+    # the layer does not ask for parallax.
+    view_tangent = custom(fn, _CODE_VIEW_TANGENT, CMOT.CMOT_FLOAT3, ['CameraVector'], [],
+                          -1100, -700, 'View direction in tangent space')
+    link(ins['CameraVector'], '', view_tangent, 'CameraVector')
+
+    height_tap = _fn_sample(fn, ins['CRM'], ST.SAMPLERTYPE_MASKS, coords, '', -1050, -620)
+
+    cheap = custom(fn, _CODE_PARALLAX_CHEAP, CMOT.CMOT_FLOAT2,
+                   ['UV', 'ViewTangent', 'Height', 'Amount'], [], -900, -700, 'Parallax offset')
+    link(coords, '', cheap, 'UV')
+    link(view_tangent, '', cheap, 'ViewTangent')
+    link(height_tap, 'R', cheap, 'Height')
+    link(ins['ParallaxAmount'], '', cheap, 'Amount')
+
+    pom = custom(fn, _CODE_PARALLAX_POM, CMOT.CMOT_FLOAT2,
+                 ['HeightTex', 'UV', 'ViewTangent', 'Amount', 'Steps'], [],
+                 -900, -560, 'Parallax occlusion')
+    link(ins['CRM'], '', pom, 'HeightTex')
+    link(coords, '', pom, 'UV')
+    link(view_tangent, '', pom, 'ViewTangent')
+    link(ins['ParallaxAmount'], '', pom, 'Amount')
+    link(ins['ParallaxSteps'], '', pom, 'Steps')
+
+    shifted = _fn_switch(fn, ins['bParallaxOcclusion'], pom, '', cheap, '', -750, -640)
+    planar_uv = _fn_switch(fn, ins['bParallax'], shifted, '', coords, '', -650, -640)
+
     uv2_inputs = ['UV', 'UVScale', 'UVRotation', 'UVOffsetU', 'UVOffsetV', 'TileBreakScale']
     coords2 = custom(fn, _CODE_LAYER_UV2, CMOT.CMOT_FLOAT2, uv2_inputs, [],
                      -1200, -320, 'Second tiling')
@@ -429,7 +480,7 @@ def build_layer_function():
     taps = {}
     y_tap = -900
     for tex_name, sampler_type in textures:
-        for suffix, uv_src, uv_out in (('Planar', coords, ''), ('Break', coords2, ''),
+        for suffix, uv_src, uv_out in (('Planar', planar_uv, ''), ('Break', coords2, ''),
                                        ('X', tri, ''),
                                        ('Y', tri, 'OutUVY'), ('Z', tri, 'OutUVZ')):
             taps[tex_name + suffix] = _fn_sample(fn, ins[tex_name], sampler_type,
@@ -1019,6 +1070,8 @@ _LAYER_DEFAULTS = {
     'TileBreakStart': [1500.0, 1500.0, 1500.0],
     'TileBreakFalloff': [4000.0, 4000.0, 4000.0],
     'TileBreakAmount': [0.7, 0.7, 0.7],
+    'ParallaxAmount': [0.04, 0.04, 0.04],
+    'ParallaxSteps': [16.0, 16.0, 16.0],
     'NormalIntensity': [1.0, 1.0, 1.0],
     'NormalFlipY': [0.0, 0.0, 0.0],
     'RoughnessMin': [0.0, 0.0, 0.0],
@@ -1054,12 +1107,15 @@ def _build_layer_block(mat, index, shared, x, y):
         # A control for a feature the recipe left out would be a parameter that does nothing.
         if name.startswith('TileBreak') and not INCLUDE_TILE_BREAK:
             continue
+        if name.startswith('Parallax') and not INCLUDE_PARALLAX:
+            continue
         value = _LAYER_DEFAULTS[name][index]
         link(_param_scalar(mat, '%s_%s' % (layer, name), value, group, x, yy, sort), '', call, name)
         yy += 50
 
     link(_param_static_bool(mat, layer + '_Triplanar', False, group, x, yy, 90), '', call, 'bTriplanar')
     link(shared['depth'], '', call, 'PixelDepth')
+    link(shared['camera'], '', call, 'CameraVector')
 
     # A static bool function input has no usable default, so it is driven either way.
     if INCLUDE_TILE_BREAK:
@@ -1069,6 +1125,17 @@ def _build_layer_block(mat, index, shared, x, y):
         off = _expr(mat, unreal.MaterialExpressionStaticBool, x, yy + 50)
         off.set_editor_property('value', False)
         link(off, '', call, 'bTileBreak')
+
+    if INCLUDE_PARALLAX:
+        link(_param_static_bool(mat, layer + '_Parallax', False, group, x, yy + 100, 92),
+             '', call, 'bParallax')
+        link(_param_static_bool(mat, layer + '_ParallaxOcclusion', False, group, x, yy + 150, 93),
+             '', call, 'bParallaxOcclusion')
+    else:
+        for pin in ('bParallax', 'bParallaxOcclusion'):
+            off = _expr(mat, unreal.MaterialExpressionStaticBool, x, yy + 100)
+            off.set_editor_property('value', False)
+            link(off, '', call, pin)
     return call
 
 
@@ -1093,6 +1160,7 @@ def build_master_material():
     objectpos = _expr(mat, unreal.MaterialExpressionObjectPositionWS, -3600, -1020)
     depth = _expr(mat, unreal.MaterialExpressionPixelDepth, -3600, -960)
     vcol = _expr(mat, unreal.MaterialExpressionVertexColor, -3600, -900)
+    camera = _expr(mat, unreal.MaterialExpressionCameraVectorWS, -3600, -840)
 
     normal_z = _expr(mat, unreal.MaterialExpressionComponentMask, -3400, -1080)
     normal_z.set_editor_property('r', False)
@@ -1101,7 +1169,8 @@ def build_master_material():
     normal_z.set_editor_property('a', False)
     link(worldnormal, '', normal_z, '')
 
-    shared = {'uv': uv, 'worldpos': worldpos, 'worldnormal': worldnormal, 'depth': depth}
+    shared = {'uv': uv, 'worldpos': worldpos, 'worldnormal': worldnormal, 'depth': depth,
+              'camera': camera}
 
     # --- vertex paint -----------------------------------------------------
     # R and G are the two layer weights, B boosts wetness, A darkens. Black adds and white is
@@ -1303,6 +1372,9 @@ _SWITCH_DEFAULTS = {
     'bVertexPaint': True, 'bLayer1': False, 'bLayer2': False,
     'Layer0_Triplanar': False, 'Layer1_Triplanar': False, 'Layer2_Triplanar': False,
     'Layer0_TileBreak': False, 'Layer1_TileBreak': False, 'Layer2_TileBreak': False,
+    'Layer0_Parallax': False, 'Layer1_Parallax': False, 'Layer2_Parallax': False,
+    'Layer0_ParallaxOcclusion': False, 'Layer1_ParallaxOcclusion': False,
+    'Layer2_ParallaxOcclusion': False,
     'bWetness': False, 'bColorVariation': False, 'bMacroVariation': False, 'bEmissive': False,
     'bDetail': False,
 }
@@ -1317,6 +1389,8 @@ def build_material_instances():
             if switch == 'bDetail' and not INCLUDE_DETAIL:
                 continue
             if switch.endswith('_TileBreak') and not INCLUDE_TILE_BREAK:
+                continue
+            if '_Parallax' in switch and not INCLUDE_PARALLAX:
                 continue
             MEL.set_material_instance_static_switch_parameter_value(
                 mi, switch, bool(overrides.get(switch, default)))

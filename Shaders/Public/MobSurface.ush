@@ -30,6 +30,70 @@ float2 MobPrepMeshUV(float2 UV, float Scale, float RotationDeg, float2 Offset)
 }
 
 // ---------------------------------------------------------------------------
+// Parallax
+// ---------------------------------------------------------------------------
+//
+// Both of these shift the UV so a flat surface reads as though it has depth. Neither changes the
+// silhouette: at a grazing angle the edge is still flat, which is the honest limit of the trick.
+//
+// The tangent-space view direction they need is mul(TangentToWorld, CameraVector) - the same
+// matrix the triplanar path uses, applied the same way round.
+
+/**
+ * One step. Offsets the UV along the view direction in proportion to how deep the pixel is.
+ *
+ * Costs a multiply and an add on top of the height sample the material already took, and sells
+ * brick, cobbles and plank gaps convincingly at anything but a grazing angle. This is the one to
+ * reach for on mobile forward.
+ */
+float2 MobParallaxOffset(float2 UV, float3 ViewTangent, float Height, float Amount)
+{
+	// Height of 1 is the top of the surface, so the offset is measured down from there.
+	const float Depth = (1.0f - saturate(Height)) * Amount;
+	return UV - ViewTangent.xy / max(ViewTangent.z, 0.35f) * Depth;
+}
+
+/**
+ * Raymarched. Walks the view ray through the height field until it goes under, then refines
+ * between the last two samples so the step count does not show as banding.
+ *
+ * Genuinely expensive: Steps samples of the height texture per pixel, every pixel, whether or not
+ * there is any depth to find. Worth it on a hero surface, wrong for a whole level.
+ */
+float2 MobParallaxOcclusion(Texture2D HeightTex, SamplerState HeightSampler, float2 UV,
+	float3 ViewTangent, float Amount, int Steps, float HeightChannelIsAlpha)
+{
+	const float2 MaxOffset = ViewTangent.xy / max(ViewTangent.z, 0.35f) * Amount;
+	const float StepSize = 1.0f / max((float)Steps, 1.0f);
+
+	float2 Offset = 0.0f;
+	float RayHeight = 1.0f;
+	float LastRay = 1.0f;
+	float LastSampled = 1.0f;
+
+	[loop]
+	for (int i = 0; i < Steps; ++i)
+	{
+		const float4 Tap = Texture2DSample(HeightTex, HeightSampler, UV - Offset);
+		const float Sampled = lerp(Tap.r, Tap.a, HeightChannelIsAlpha);
+		if (Sampled >= RayHeight)
+		{
+			// Crossed between this step and the last: land where the two lines actually meet.
+			const float Above = Sampled - RayHeight;
+			const float Below = LastRay - LastSampled;
+			const float T = Above / max(Above + Below, MOB_EPS);
+			return UV - lerp(Offset, Offset - MaxOffset * StepSize, T);
+		}
+		LastRay = RayHeight;
+		LastSampled = Sampled;
+		RayHeight -= StepSize;
+		Offset += MaxOffset * StepSize;
+	}
+
+	return UV - Offset;
+}
+
+// ---------------------------------------------------------------------------
 // Tiling break
 // ---------------------------------------------------------------------------
 
