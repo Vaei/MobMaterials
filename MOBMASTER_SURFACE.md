@@ -8,6 +8,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The landscape master 
 | [Layers](#layers) | three of them, and how they interlock |
 | [Vertex paint](#vertex-paint) | which channel drives what, and why black adds |
 | [Projection](#projection) | mesh UV or triplanar, per layer |
+| [Tiling break](#tiling-break) | stopping a tiled surface reading as a grid at range |
 | [Wetness](#wetness) | one global value, and what it does to a surface |
 | [Colour variation](#colour-variation) | per object, and across a single mesh |
 | [Cavity](#cavity) | micro shadowing, and why it never reaches the AO pin |
@@ -68,6 +69,24 @@ Per layer, `LayerN_Triplanar`. Off is a single mesh-UV tap. On is world-aligned 
 `TriplanarScale` is world units to UV. `TriplanarSharpness` is how narrowly the three projections cross-fade.
 
 Normals are handled properly rather than blended flat: each projection is reoriented against the geometric normal with a whiteout blend before the three are combined, then the result is taken back to tangent space. A face that is mostly but not exactly axis-aligned keeps the slope the other two projections were carrying.
+
+## Tiling break
+
+`LayerN_TileBreak`. A second tiling of the same texture, at a scale and rotation incommensurate with the first, crossfaded in with distance.
+
+The repeat only becomes visible once enough tiles are on screen at once, so the break is bound to distance rather than applied everywhere: near keeps the detail it was authored with, far dissolves the grid.
+
+| | |
+|---|---|
+| `TileBreakScale` | second tiling relative to the first. Keep it irrational-ish - 0.37 rather than 0.5, or the two repeats line up and you have made a bigger grid |
+| `TileBreakStart`, `TileBreakFalloff` | where it comes in |
+| `TileBreakAmount` | how far it goes |
+
+The two tilings combine as an **overlay**, not a lerp. A lerp of two scales halves the contrast and reads as blur, trading one artefact for another; overlay keeps the detail and only disturbs the low frequency that made the repeat visible. Normals blend rather than multiply, which would flatten them.
+
+**Mesh-UV path only.** With triplanar on it does nothing: that already samples three ways, and breaking it too would be nine taps to solve a repeat the projection has largely hidden.
+
+Three extra samples on any layer that uses it. Leave **Distance Tiling Break** off on the recipe and it is not in the master at all.
 
 ## Wetness
 

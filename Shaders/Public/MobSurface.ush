@@ -30,6 +30,40 @@ float2 MobPrepMeshUV(float2 UV, float Scale, float RotationDeg, float2 Offset)
 }
 
 // ---------------------------------------------------------------------------
+// Tiling break
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the second, coarser tiling takes over.
+ *
+ * A tiled texture reads fine up close and as a grid from across the room, because the repeat only
+ * becomes visible once enough tiles are on screen at once. So the break is bound to distance:
+ * near keeps the detail, far crossfades to a scale incommensurate with it and the grid dissolves.
+ */
+float MobTileBreakAmount(float PixelDepth, float Start, float Falloff, float Amount)
+{
+	return MobDistanceFade(PixelDepth, Start, Falloff) * saturate(Amount);
+}
+
+/**
+ * Two tilings of one texture combined as an overlay rather than a lerp.
+ *
+ * A lerp of two scales halves the contrast and reads as blur, which trades one artefact for
+ * another. Overlay keeps the detail and only disturbs the low frequency that made the repeat
+ * visible in the first place.
+ */
+float4 MobTileBreak(float4 Base, float4 Second, float Amount)
+{
+	return lerp(Base, saturate(Base * Second * 2.0f), saturate(Amount));
+}
+
+/** The same, for a tangent normal: blended rather than multiplied, which would flatten it. */
+float3 MobTileBreakNormal(float3 Base, float3 Second, float Amount)
+{
+	return MobBlendNormal(Base, Second, saturate(Amount));
+}
+
+// ---------------------------------------------------------------------------
 // Layer grading
 // ---------------------------------------------------------------------------
 

@@ -122,8 +122,10 @@ def apply_surface(module, recipe):
         module.WEATHER_MPC = '%s/MPC_%sWeather' % (module.ROOT, module.MASTER_NAME)
     module.RECIPE = recipe
     module.INCLUDE_DETAIL = bool(recipe.get_editor_property('detail_maps'))
+    module.INCLUDE_TILE_BREAK = bool(recipe.get_editor_property('distance_tiling_break'))
 
     module._log('%s: %s, weather %s, detail %s'
                 % (module.MASTER_NAME, module.ROOT, module.WEATHER_MPC,
                    'on' if module.INCLUDE_DETAIL else 'off'))
+    module._log('  tiling break %s' % ('on' if module.INCLUDE_TILE_BREAK else 'off'))
     return module

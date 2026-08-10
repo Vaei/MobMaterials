@@ -59,6 +59,7 @@ RECIPE = None
 # Recipe options. A feature left out here is not in the master at all, rather than present and
 # switched off, so it costs no parameters and no graph.
 INCLUDE_DETAIL = True
+INCLUDE_TILE_BREAK = True
 
 LAYERS = ['Layer0', 'Layer1', 'Layer2']
 
@@ -293,6 +294,23 @@ Weights = MobTriplanarWeights(WorldNormal, TriplanarSharpness);
 return UVX;
 """
 
+# A second tiling of the same texture, at a scale and rotation incommensurate with the first so the
+# two repeats never line up.
+_CODE_LAYER_UV2 = """
+return MobPrepMeshUV(UV, UVScale * TileBreakScale, UVRotation + 37.0f,
+                     float2(UVOffsetU, UVOffsetV) + 0.37f);
+"""
+
+_CODE_TILEBREAK = """
+return MobTileBreak(Base, Second,
+    MobTileBreakAmount(PixelDepth, TileBreakStart, TileBreakFalloff, TileBreakAmount));
+"""
+
+_CODE_TILEBREAK_NORMAL = """
+return MobTileBreakNormal(Base, Second,
+    MobTileBreakAmount(PixelDepth, TileBreakStart, TileBreakFalloff, TileBreakAmount));
+"""
+
 _CODE_TRI_COMBINE = """
 return MobTriplanarCombine(X, Y, Z, Weights);
 """
@@ -325,6 +343,10 @@ _LAYER_CONTROLS = [
     ('UVOffsetV', FIT.FUNCTION_INPUT_SCALAR, 0.0, 13, ''),
     ('TriplanarScale', FIT.FUNCTION_INPUT_SCALAR, 0.01, 14, 'World units to UV, used when bTriplanar is on'),
     ('TriplanarSharpness', FIT.FUNCTION_INPUT_SCALAR, 4.0, 15, 'How narrowly the three projections cross-fade'),
+    ('TileBreakScale', FIT.FUNCTION_INPUT_SCALAR, 0.37, 16, 'Second tiling, relative to the first'),
+    ('TileBreakStart', FIT.FUNCTION_INPUT_SCALAR, 1500.0, 17, 'Where the second tiling starts coming in'),
+    ('TileBreakFalloff', FIT.FUNCTION_INPUT_SCALAR, 4000.0, 18, ''),
+    ('TileBreakAmount', FIT.FUNCTION_INPUT_SCALAR, 0.7, 19, ''),
     ('NormalIntensity', FIT.FUNCTION_INPUT_SCALAR, 1.0, 20, ''),
     ('NormalFlipY', FIT.FUNCTION_INPUT_SCALAR, 0.0, 21, '1 for a DirectX-convention normal map'),
     ('RoughnessMin', FIT.FUNCTION_INPUT_SCALAR, 0.0, 30, ''),
@@ -375,7 +397,10 @@ def build_layer_function():
         ins[name] = fn_input(fn, name, in_type, -1600, y, sort, default=default, description=desc)
         y += 50
 
+    ins['PixelDepth'] = fn_input(fn, 'PixelDepth', FIT.FUNCTION_INPUT_SCALAR, -1600, y, 8, default=0.0)
+    y += 50
     ins['bTriplanar'] = fn_input(fn, 'bTriplanar', FIT.FUNCTION_INPUT_STATIC_BOOL, -1600, y, 90)
+    ins['bTileBreak'] = fn_input(fn, 'bTileBreak', FIT.FUNCTION_INPUT_STATIC_BOOL, -1600, y + 50, 91)
 
     uv_inputs = ['UV', 'UVScale', 'UVRotation', 'UVOffsetU', 'UVOffsetV']
     coords = custom(fn, _CODE_LAYER_UV, CMOT.CMOT_FLOAT2, uv_inputs, [],
@@ -392,13 +417,20 @@ def build_layer_function():
     for pin in tri_inputs:
         link(ins[pin], '', tri, pin)
 
+    uv2_inputs = ['UV', 'UVScale', 'UVRotation', 'UVOffsetU', 'UVOffsetV', 'TileBreakScale']
+    coords2 = custom(fn, _CODE_LAYER_UV2, CMOT.CMOT_FLOAT2, uv2_inputs, [],
+                     -1200, -320, 'Second tiling')
+    for pin in uv2_inputs:
+        link(ins[pin], '', coords2, pin)
+
     textures = (('BC', ST.SAMPLERTYPE_COLOR), ('NRM', ST.SAMPLERTYPE_NORMAL),
                 ('CRM', ST.SAMPLERTYPE_MASKS))
 
     taps = {}
     y_tap = -900
     for tex_name, sampler_type in textures:
-        for suffix, uv_src, uv_out in (('Planar', coords, ''), ('X', tri, ''),
+        for suffix, uv_src, uv_out in (('Planar', coords, ''), ('Break', coords2, ''),
+                                       ('X', tri, ''),
                                        ('Y', tri, 'OutUVY'), ('Z', tri, 'OutUVZ')):
             taps[tex_name + suffix] = _fn_sample(fn, ins[tex_name], sampler_type,
                                                  uv_src, uv_out, -900, y_tap)
@@ -414,8 +446,20 @@ def build_layer_function():
         for axis in ('X', 'Y', 'Z'):
             link(taps[tex_name + axis], 'RGBA', combine, axis)
         link(tri, 'Weights', combine, 'Weights')
-        finals[tex_name] = _fn_switch(fn, ins['bTriplanar'], combine, '',
-                                      taps[tex_name + 'Planar'], 'RGBA', -250, y_comb)
+
+        # Planar only: triplanar already samples three ways, and breaking that too would be nine
+        # taps to solve a repeat the projection has largely hidden.
+        broke = custom(fn, _CODE_TILEBREAK, CMOT.CMOT_FLOAT4,
+                       ['Base', 'Second', 'PixelDepth', 'TileBreakStart', 'TileBreakFalloff',
+                        'TileBreakAmount'], [], -400, y_comb + 380, 'Distance tiling break')
+        link(taps[tex_name + 'Planar'], 'RGBA', broke, 'Base')
+        link(taps[tex_name + 'Break'], 'RGBA', broke, 'Second')
+        for pin in ('PixelDepth', 'TileBreakStart', 'TileBreakFalloff', 'TileBreakAmount'):
+            link(ins[pin], '', broke, pin)
+        planar = _fn_switch(fn, ins['bTileBreak'], broke, '',
+                            taps[tex_name + 'Planar'], 'RGBA', -300, y_comb + 380)
+
+        finals[tex_name] = _fn_switch(fn, ins['bTriplanar'], combine, '', planar, '', -250, y_comb)
         y_comb += 700
 
     nrm_combine = custom(fn, _CODE_TRI_NORMAL, CMOT.CMOT_FLOAT3,
@@ -425,8 +469,17 @@ def build_layer_function():
         link(taps['NRM' + axis], 'RGB', nrm_combine, pin)
     link(ins['WorldNormal'], '', nrm_combine, 'GeoNormal')
     link(tri, 'Weights', nrm_combine, 'Weights')
-    finals['NRM'] = _fn_switch(fn, ins['bTriplanar'], nrm_combine, '',
-                               taps['NRMPlanar'], 'RGB', -250, y_comb)
+    nrm_broke = custom(fn, _CODE_TILEBREAK_NORMAL, CMOT.CMOT_FLOAT3,
+                       ['Base', 'Second', 'PixelDepth', 'TileBreakStart', 'TileBreakFalloff',
+                        'TileBreakAmount'], [], -400, y_comb + 380, 'Distance tiling break')
+    link(taps['NRMPlanar'], 'RGB', nrm_broke, 'Base')
+    link(taps['NRMBreak'], 'RGB', nrm_broke, 'Second')
+    for pin in ('PixelDepth', 'TileBreakStart', 'TileBreakFalloff', 'TileBreakAmount'):
+        link(ins[pin], '', nrm_broke, pin)
+    nrm_planar = _fn_switch(fn, ins['bTileBreak'], nrm_broke, '', taps['NRMPlanar'], 'RGB',
+                            -300, y_comb + 380)
+
+    finals['NRM'] = _fn_switch(fn, ins['bTriplanar'], nrm_combine, '', nrm_planar, '', -250, y_comb)
 
     grade_inputs = ['BC', 'NRM', 'CRM', 'Tint',
                     'NormalIntensity', 'NormalFlipY',
@@ -962,6 +1015,10 @@ _LAYER_DEFAULTS = {
     'UVOffsetV': [0.0, 0.0, 0.0],
     'TriplanarScale': [0.01, 0.01, 0.01],
     'TriplanarSharpness': [4.0, 4.0, 4.0],
+    'TileBreakScale': [0.37, 0.41, 0.53],
+    'TileBreakStart': [1500.0, 1500.0, 1500.0],
+    'TileBreakFalloff': [4000.0, 4000.0, 4000.0],
+    'TileBreakAmount': [0.7, 0.7, 0.7],
     'NormalIntensity': [1.0, 1.0, 1.0],
     'NormalFlipY': [0.0, 0.0, 0.0],
     'RoughnessMin': [0.0, 0.0, 0.0],
@@ -994,11 +1051,24 @@ def _build_layer_block(mat, index, shared, x, y):
 
     yy = y + 320
     for name, _in_type, _default, sort, _desc in _LAYER_CONTROLS:
+        # A control for a feature the recipe left out would be a parameter that does nothing.
+        if name.startswith('TileBreak') and not INCLUDE_TILE_BREAK:
+            continue
         value = _LAYER_DEFAULTS[name][index]
         link(_param_scalar(mat, '%s_%s' % (layer, name), value, group, x, yy, sort), '', call, name)
         yy += 50
 
     link(_param_static_bool(mat, layer + '_Triplanar', False, group, x, yy, 90), '', call, 'bTriplanar')
+    link(shared['depth'], '', call, 'PixelDepth')
+
+    # A static bool function input has no usable default, so it is driven either way.
+    if INCLUDE_TILE_BREAK:
+        link(_param_static_bool(mat, layer + '_TileBreak', False, group, x, yy + 50, 91),
+             '', call, 'bTileBreak')
+    else:
+        off = _expr(mat, unreal.MaterialExpressionStaticBool, x, yy + 50)
+        off.set_editor_property('value', False)
+        link(off, '', call, 'bTileBreak')
     return call
 
 
@@ -1031,7 +1101,7 @@ def build_master_material():
     normal_z.set_editor_property('a', False)
     link(worldnormal, '', normal_z, '')
 
-    shared = {'uv': uv, 'worldpos': worldpos, 'worldnormal': worldnormal}
+    shared = {'uv': uv, 'worldpos': worldpos, 'worldnormal': worldnormal, 'depth': depth}
 
     # --- vertex paint -----------------------------------------------------
     # R and G are the two layer weights, B boosts wetness, A darkens. Black adds and white is
@@ -1232,6 +1302,7 @@ _INSTANCE_PRESETS = [
 _SWITCH_DEFAULTS = {
     'bVertexPaint': True, 'bLayer1': False, 'bLayer2': False,
     'Layer0_Triplanar': False, 'Layer1_Triplanar': False, 'Layer2_Triplanar': False,
+    'Layer0_TileBreak': False, 'Layer1_TileBreak': False, 'Layer2_TileBreak': False,
     'bWetness': False, 'bColorVariation': False, 'bMacroVariation': False, 'bEmissive': False,
     'bDetail': False,
 }
@@ -1244,6 +1315,8 @@ def build_material_instances():
         mi = _get_or_create_instance('MI_%s_%s' % (MASTER_NAME, name), master)
         for switch, default in _SWITCH_DEFAULTS.items():
             if switch == 'bDetail' and not INCLUDE_DETAIL:
+                continue
+            if switch.endswith('_TileBreak') and not INCLUDE_TILE_BREAK:
                 continue
             MEL.set_material_instance_static_switch_parameter_value(
                 mi, switch, bool(overrides.get(switch, default)))

@@ -118,6 +118,18 @@ public:
 	bool bDetailMaps = true;
 
 	/**
+	 * Adds a distance tiling break: a second, incommensurate tiling of the same texture crossfaded
+	 * in with distance, so a large tiled surface stops reading as a grid from across the room.
+	 *
+	 * Three extra samples per layer that uses it, and only on the mesh-UV path - triplanar already
+	 * samples three ways and breaking that too would be nine taps to solve a repeat the projection
+	 * has largely hidden.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
+		meta=(EditCondition="Kind == EMobMaterialKind::Surface", EditConditionHides))
+	bool bDistanceTilingBreak = true;
+
+	/**
 	 * Parameter collection carrying the global wetness the surface master reads.
 	 *
 	 * Point several recipes at one collection and their materials go wet together. Leave it empty
