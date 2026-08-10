@@ -108,6 +108,16 @@ public:
 	FDirectoryPath GrassTypePath;
 
 	/**
+	 * Adds a detail normal: one fine tiling normal laid over the surface and faded out with
+	 * distance, which is most of what separates a base layer from a finished one up close.
+	 *
+	 * One extra texture sample for the whole material, and only when an instance turns it on.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
+		meta=(EditCondition="Kind == EMobMaterialKind::Surface", EditConditionHides))
+	bool bDetailMaps = true;
+
+	/**
 	 * Parameter collection carrying the global wetness the surface master reads.
 	 *
 	 * Point several recipes at one collection and their materials go wet together. Leave it empty

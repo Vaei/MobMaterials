@@ -43,6 +43,7 @@ BASE_TEX_NRM = '/MobMasterMaterial/Textures/T_BaseNormal'
 BASE_TEX_CRM = '/MobMasterMaterial/Textures/T_BaseCRM'
 BASE_TEX_NOISE = '/MobMasterMaterial/Textures/T_BaseLinear'
 BASE_TEX_EMISSIVE = '/MobMasterMaterial/Textures/T_BaseBlack'
+BASE_TEX_DETAIL = '/MobMasterMaterial/Textures/T_BaseNormal'
 # The opacity mask is read from alpha rather than a colour channel: alpha skips the sRGB decode, so
 # the threshold an artist sets is the threshold the clip uses, and a masked prop can point this
 # straight at its own BaseColor. The placeholder compresses without alpha, which samples as 1, so an
@@ -54,6 +55,10 @@ WEATHER_PARAM = 'Wetness'
 
 # Set by mob_recipe so a newly created collection can be written back onto the recipe.
 RECIPE = None
+
+# Recipe options. A feature left out here is not in the master at all, rather than present and
+# switched off, so it costs no parameters and no graph.
+INCLUDE_DETAIL = True
 
 LAYERS = ['Layer0', 'Layer1', 'Layer2']
 
@@ -732,6 +737,10 @@ def build_emissive_function():
 # MF_MobSurfaceFinalise
 # ---------------------------------------------------------------------------
 
+_CODE_DETAIL = """
+return MobDetailNormal(Normal, Detail.rgb, Strength, MobDistanceFade(PixelDepth, FadeStart, FadeLength));
+"""
+
 _CODE_FINALISE = """
 float3 Col = MobApplyCavity(BaseColor, Cavity, CavityColorAmount);
 Col *= lerp(1.0f, VertexShade, saturate(VertexShadeAmount));
@@ -773,8 +782,13 @@ def build_finalise_function():
     ins['VertexShade'] = fn_input(fn, 'VertexShade', FIT.FUNCTION_INPUT_SCALAR, -700, -130, 5,
                                   default=1.0, description='Painted darkening, vertex colour alpha')
     ins['PixelDepth'] = fn_input(fn, 'PixelDepth', FIT.FUNCTION_INPUT_SCALAR, -700, -80, 6, default=0.0)
+    ins['DetailTexture'] = fn_input(fn, 'DetailTexture', FIT.FUNCTION_INPUT_TEXTURE2D, -700, -30, 7)
+    ins['DetailUV'] = fn_input(fn, 'DetailUV', FIT.FUNCTION_INPUT_VECTOR2, -700, 20, 8,
+                               default=(0.0, 0.0))
+    ins['bDetail'] = fn_input(fn, 'bDetail', FIT.FUNCTION_INPUT_STATIC_BOOL, -700, 70, 90)
 
-    scalars = [('CavityColorAmount', 0.5, 10), ('CavitySpecularAmount', 0.5, 11),
+    scalars = [('DetailStrength', 0.5, 15),
+               ('CavityColorAmount', 0.5, 10), ('CavitySpecularAmount', 0.5, 11),
                ('VertexShadeAmount', 1.0, 12),
                ('FadeStart', 2000.0, 20), ('FadeLength', 6000.0, 21),
                ('DistanceNormalFlatten', 0.6, 22), ('DistanceRoughnessFloor', 0.4, 23)]
@@ -783,6 +797,21 @@ def build_finalise_function():
         ins[name] = fn_input(fn, name, FIT.FUNCTION_INPUT_SCALAR, -700, y, sort, default=default)
         y += 50
 
+    # One tap for the whole material rather than one per layer: a detail normal is the same
+    # high-frequency break whichever layer it lands on, and three of them would cost three samples
+    # to say the same thing.
+    detail_sample = _fn_sample(fn, ins['DetailTexture'], ST.SAMPLERTYPE_NORMAL,
+                               ins['DetailUV'], '', -520, 60)
+    detailed = custom(fn, _CODE_DETAIL, CMOT.CMOT_FLOAT3,
+                      ['Normal', 'Detail', 'Strength', 'PixelDepth', 'FadeStart', 'FadeLength'],
+                      [], -420, 60, 'Detail normal')
+    link(ins['Normal'], '', detailed, 'Normal')
+    link(detail_sample, 'RGB', detailed, 'Detail')
+    link(ins['DetailStrength'], '', detailed, 'Strength')
+    for pin in ('PixelDepth', 'FadeStart', 'FadeLength'):
+        link(ins[pin], '', detailed, pin)
+    normal_in = _fn_switch(fn, ins['bDetail'], detailed, '', ins['Normal'], '', -360, 60)
+
     final_inputs = ['BaseColor', 'Normal', 'Roughness', 'Specular', 'Cavity', 'VertexShade',
                     'PixelDepth'] + [s[0] for s in scalars]
     final = custom(fn, _CODE_FINALISE, CMOT.CMOT_FLOAT3, final_inputs,
@@ -790,7 +819,7 @@ def build_finalise_function():
                     ('OutSpecular', CMOT.CMOT_FLOAT1)],
                    -300, -300, 'Finalise')
     for pin in final_inputs:
-        link(ins[pin], '', final, pin)
+        link(normal_in if pin == 'Normal' else ins[pin], '', final, pin)
 
     for i, (name, out) in enumerate((('BaseColor', ''), ('Normal', 'OutNormal'),
                                      ('Roughness', 'OutRoughness'), ('Specular', 'OutSpecular'))):
@@ -918,6 +947,7 @@ GROUP_GLOBAL = '00 - Global'
 GROUP_BLEND = '10 - Blending'
 GROUP_WETNESS = '30 - Wetness'
 GROUP_VARIATION = '40 - Variation'
+GROUP_DETAIL = '45 - Detail'
 GROUP_EMISSIVE = '50 - Emissive'
 GROUP_DISTANCE = '60 - Distance'
 
@@ -1101,6 +1131,24 @@ def build_master_material():
     link(blend, 'Cavity', final, 'Cavity')
     link(vertex_shade, '', final, 'VertexShade')
     link(depth, '', final, 'PixelDepth')
+
+    # A static bool function input has no usable default, so it has to be driven either way: a
+    # parameter when the feature is in, a constant false when the recipe left it out.
+    if not INCLUDE_DETAIL:
+        off = _expr(mat, unreal.MaterialExpressionStaticBool, -600, 420)
+        off.set_editor_property('value', False)
+        link(off, '', final, 'bDetail')
+    else:
+        detail_uv = MEL.create_material_expression(mat, unreal.MaterialExpressionMultiply, -300, 500)
+        link(uv, '', detail_uv, 'A')
+        link(_param_scalar(mat, 'DetailScale', 8.0, GROUP_DETAIL, -600, 500, 1), '', detail_uv, 'B')
+        link(detail_uv, '', final, 'DetailUV')
+        link(_param_texture(mat, 'DetailNormal', BASE_TEX_DETAIL, GROUP_DETAIL, -600, 420, 0),
+             '', final, 'DetailTexture')
+        link(_param_scalar(mat, 'DetailStrength', 0.5, GROUP_DETAIL, -600, 560, 2),
+             '', final, 'DetailStrength')
+        link(_param_static_bool(mat, 'bDetail', False, GROUP_DETAIL, -600, 610, 90),
+             '', final, 'bDetail')
     fy = -600
     for name, default, group, sort in (('CavityColorAmount', 0.5, GROUP_GLOBAL, 10),
                                        ('CavitySpecularAmount', 0.5, GROUP_GLOBAL, 11),
@@ -1185,6 +1233,7 @@ _SWITCH_DEFAULTS = {
     'bVertexPaint': True, 'bLayer1': False, 'bLayer2': False,
     'Layer0_Triplanar': False, 'Layer1_Triplanar': False, 'Layer2_Triplanar': False,
     'bWetness': False, 'bColorVariation': False, 'bMacroVariation': False, 'bEmissive': False,
+    'bDetail': False,
 }
 
 
@@ -1194,6 +1243,8 @@ def build_material_instances():
     for name, overrides in _INSTANCE_PRESETS:
         mi = _get_or_create_instance('MI_%s_%s' % (MASTER_NAME, name), master)
         for switch, default in _SWITCH_DEFAULTS.items():
+            if switch == 'bDetail' and not INCLUDE_DETAIL:
+                continue
             MEL.set_material_instance_static_switch_parameter_value(
                 mi, switch, bool(overrides.get(switch, default)))
         save(mi)

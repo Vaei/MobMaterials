@@ -121,6 +121,9 @@ def apply_surface(module, recipe):
         # the generator can fill the field in once it has created it.
         module.WEATHER_MPC = '%s/MPC_%sWeather' % (module.ROOT, module.MASTER_NAME)
     module.RECIPE = recipe
+    module.INCLUDE_DETAIL = bool(recipe.get_editor_property('detail_maps'))
 
-    module._log('%s: %s, weather %s' % (module.MASTER_NAME, module.ROOT, module.WEATHER_MPC))
+    module._log('%s: %s, weather %s, detail %s'
+                % (module.MASTER_NAME, module.ROOT, module.WEATHER_MPC,
+                   'on' if module.INCLUDE_DETAIL else 'off'))
     return module

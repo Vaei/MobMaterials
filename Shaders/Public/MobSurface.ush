@@ -139,6 +139,24 @@ float3 MobWorldToTangent(float3 WorldN, float3x3 TangentToWorld)
 }
 
 // ---------------------------------------------------------------------------
+// Detail
+// ---------------------------------------------------------------------------
+
+/**
+ * A second, much finer normal laid over the surface, faded out with distance.
+ *
+ * This is what a surface looks like from arm's length rather than from across the room, and it is
+ * the cheapest thing that separates a base layer from a finished one. Faded because it is
+ * high frequency by definition: kept at range it is the same sub-pixel noise the distance clamp
+ * exists to remove.
+ */
+float3 MobDetailNormal(float3 Normal, float3 Detail, float Strength, float DistanceFade)
+{
+	const float Amount = saturate(Strength) * (1.0f - saturate(DistanceFade));
+	return MobBlendNormal(Normal, Detail, Amount);
+}
+
+// ---------------------------------------------------------------------------
 // Wetness
 // ---------------------------------------------------------------------------
 

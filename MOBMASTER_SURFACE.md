@@ -12,6 +12,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The landscape master 
 | [Colour variation](#colour-variation) | per object, and across a single mesh |
 | [Cavity](#cavity) | micro shadowing, and why it never reaches the AO pin |
 | [Emissive](#emissive) | a masked glow |
+| [Detail](#detail) | the second normal that makes a surface hold up close |
 | [Distance](#distance) | the clamp that stops speculars crawling |
 | [Blend modes](#blend-modes) | opaque, masked, two-sided |
 | [Cost](#cost) | what each feature actually costs, measured |
@@ -101,6 +102,22 @@ Cavity is micro shadowing. It multiplies BaseColor and modulates Specular, and i
 ## Emissive
 
 `bEmissive`. A mask texture times `EmissiveColor` times `EmissiveIntensity`. Off, the mask is never sampled and the pin is never written.
+
+## Detail
+
+`bDetail`. A second, much finer normal laid over whatever the layers blended to, faded out with distance.
+
+This is most of what separates a base layer from a finished surface at arm's length, and it is one texture sample for the whole material rather than one per layer - a detail normal is the same high-frequency break whichever layer it lands on.
+
+| | |
+|---|---|
+| `DetailNormal` | the texture. Tiles far tighter than the layers do |
+| `DetailScale` | multiplies the mesh UV. 8 is a reasonable start |
+| `DetailStrength` | how much slope it contributes |
+
+It fades on the same curve as the distance clamp, and for the same reason: kept at range it is exactly the sub-pixel noise the clamp exists to remove.
+
+Leave **Detail Maps** off on the recipe and none of this is in the master at all - no parameters, no sample, no switch.
 
 ## Distance
 
