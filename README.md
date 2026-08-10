@@ -37,8 +37,6 @@ UE5.8+
 * [Forward Render Helper Plugin](https://github.com/Vaei/ForwardRender)
   * Replaces Hotpatch Module in Perf Maxing guide above
   * Sets your light vector on the MPC for you
-* [Fake Point Lights - Paid / Not Free](https://www.fab.com/listings/f0c0b9a6-9ac2-445f-9588-9d79b4878ae7)
-  * Works well with mobile forward rendering
 
 ## Features
 
