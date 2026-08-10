@@ -46,30 +46,34 @@ UE5.8+
 
 <!-- TODO(image): the Mob menu and the generate window, side by side -->
 
-### Landscape
+### Terrain that does not repeat, and does not cost what it looks like
 
-- **Any number of paint layers**, folded together by a height interlock rather than a cross-fade, with the first layer holding the weight the painted ones leave behind
-- **Four tiling-break tiers per layer** - none, cheap noise modulation, dual-scale overlay, and stochastic hex tiling that no repeat survives - with variance restored after the hex blend
-- **Slope and altitude masks per layer**, so a layer can fade out as ground steepens or band itself over a waterline
-- **Automatic slope rock**, so cliffs need no painting
-- **Moss** placed by cavity, slope, sun-facing shade and noise, each independently weighted
-- **Wetness and puddles**, with the wet mask feeding the physical material output so wet dirt reads as mud underfoot
-- **Global grade** and distance aerial perspective in one place
-- **Runtime virtual texture** - the whole layer blend cached into a page and sampled by the base pass, so the per-pixel cost stops scaling with layer count. Falls back to blending live where virtual texturing is off
-- **Meshes blend into the terrain** - a rock reads the ground's own RVT and fades into it over the last few centimetres, so it meets the ground instead of cutting a silhouette into it. Repaint the ground and everything standing in it follows
-- **Footstep surfaces and landscape grass** driven by the same paint weights
+- **Stochastic hex tiling with variance restoration.** Three rotated taps on a hex lattice, then the blended result pushed back out from the texture's mean so it does not wash out. No repeat survives it, at any viewing distance
+- **The whole layer blend cached into a runtime virtual texture.** Per-pixel cost stops scaling with layer count, so a dozen layers costs what one does. Falls back to blending live where virtual texturing is off
+- **Layers interlock rather than cross-fade.** Gravel comes up through grass along its own stones, because the blend is resolved against height instead of lerped
 
-### Surface
+### Terrain that places itself
 
-- **Three layers**, each a full pack, interlocking on cavity rather than cross-fading
-- **Vertex paint with no fill step** - black adds and white is neutral, so a mesh that was never painted arrives as the base layer rather than as the top one
-- **Triplanar per layer**, correct under non-uniform scale, with normals reoriented per projection rather than blended flat
-- **Wetness from a parameter collection**, so weather moves the whole world at once. Porosity comes from cavity, so water reaches crevices before high points, and standing water is gated to up-facing surfaces
-- **Colour variation** per object from a position hash, and low-frequency macro noise that varies across a single mesh
-- **Cavity** into base colour and specular, never the AO pin, so it cannot double with the renderer's own occlusion
-- **Masked emissive**
-- **A distance clamp** on normals and roughness, because sub-pixel specular detail crawls without a temporal filter
-- **4 samplers in every permutation** - every sample is Shared:Wrap, so the 16-sampler limit never binds however many layers are on
+- **Cliffs appear where the ground gets steep.** No painting a rock layer down every slope
+- **Moss grows where moss grows** - in crevices, on shaded faces, off the sun, broken up by noise. Four signals, each weighted, all from data the material already has
+- **Rain darkens the world at once**, pooling in the low points first because porosity comes from cavity, and standing water only on surfaces facing up
+- **Footsteps and grass come from the paint.** The same weights that blend the ground decide what it sounds like underfoot and what grows out of it
+
+### Meshes that belong to the ground they stand in
+
+- **A rock reads the terrain's own virtual texture and fades into it**, so it meets the ground instead of cutting a silhouette into it. Repaint the ground and everything standing in it follows
+- **Triplanar that survives scaling**, with normals reoriented per projection rather than blended flat, so kitbashed geometry needs no UVs
+- **Vertex paint with no fill step.** Black adds, white is neutral, so a mesh that was never painted arrives as the base layer instead of covered in the top one, soaking wet
+- **Every copy of a prop looks different** from a hash of where it stands - no per-actor setup, no extra instances
+
+### Built for the mobile forward path
+
+- **4 samplers in every permutation.** Every sample is Shared:Wrap, so the 16-sampler limit never binds however many layers are on
+- **Sub-pixel detail is removed with distance**, because specular that fine crawls without a temporal filter and FXAA cannot save it
+- **Cavity, never ambient occlusion.** Micro shadowing multiplies base colour and specular; the AO pin stays free so it cannot double with the renderer's own occlusion
+- **A disabled feature is not compiled.** Its texture samples and its maths leave the shader entirely, rather than being multiplied by zero
+
+Full parameter-level detail is in [`MOBMASTER_LANDSCAPE.md`](./MOBMASTER_LANDSCAPE.md) and [`MOBMASTER_SURFACE.md`](./MOBMASTER_SURFACE.md).
 
 ### Texture packs
 
