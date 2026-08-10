@@ -61,6 +61,7 @@ RECIPE = None
 INCLUDE_DETAIL = True
 INCLUDE_TILE_BREAK = True
 INCLUDE_PARALLAX = False
+INCLUDE_PRIMITIVE_DATA = True
 
 LAYERS = ['Layer0', 'Layer1', 'Layer2']
 
@@ -654,6 +655,16 @@ def build_blend_function():
 # MF_MobColorVariation
 # ---------------------------------------------------------------------------
 
+# Per instance, set on the component, so one material instance serves thousands of actors that all
+# look different. A hash of position cannot do that: it gives every copy a different tint, but
+# never the tint somebody chose.
+_CODE_PRIMITIVE = """
+float3 Col = BaseColor * lerp(1.0f.xxx, Tint, saturate(TintAmount));
+OutRoughness = saturate(Roughness + RoughnessOffset);
+OutWetness = saturate(Wetness + WetnessOffset);
+return max(Col, 0.0f);
+"""
+
 _CODE_VARIATION = """
 float3 Col = MobColorVariation(BaseColor, MobHash13(ObjectPos), HueRange, SaturationRange, ValueRange);
 return MobMacroVariation(Col, MacroNoise, TintA, TintB, MacroTintAmount, MacroValueAmount);
@@ -1051,6 +1062,7 @@ GROUP_GLOBAL = '00 - Global'
 GROUP_BLEND = '10 - Blending'
 GROUP_WETNESS = '30 - Wetness'
 GROUP_VARIATION = '40 - Variation'
+GROUP_PRIMITIVE = '05 - Per Instance'
 GROUP_DETAIL = '45 - Detail'
 GROUP_EMISSIVE = '50 - Emissive'
 GROUP_DISTANCE = '60 - Distance'
@@ -1241,17 +1253,66 @@ def build_master_material():
     weather.set_editor_property('collection', unreal.load_asset(WEATHER_MPC))
     weather.set_editor_property('parameter_name', WEATHER_PARAM)
 
+    # --- per-instance overrides -------------------------------------------
+    # Sits between variation and wetness so an instance can be told to be wetter, and so its tint
+    # multiplies whatever the layers and the variation already decided.
+    colour_src, colour_out = variation, 'BaseColor'
+    rough_src, rough_out = blend, 'Roughness'
+    wet_local_src, wet_local_out = None, ''
+
+    if INCLUDE_PRIMITIVE_DATA:
+        # Custom primitive data is a flag on a parameter rather than a node of its own: the
+        # parameter keeps its default when nothing sets the data, so an actor that was never told
+        # anything looks like the instance says it should.
+        tint = _param_vector(mat, 'PrimitiveTint', (1.0, 1.0, 1.0), GROUP_PRIMITIVE, -1250, -360, 0)
+        tint.set_editor_property('use_custom_primitive_data', True)
+        tint.set_editor_property('primitive_data_index', 0)
+
+        rough_offset = _param_scalar(mat, 'PrimitiveRoughness', 0.0, GROUP_PRIMITIVE, -1250, -300, 1)
+        rough_offset.set_editor_property('use_custom_primitive_data', True)
+        rough_offset.set_editor_property('primitive_data_index', 4)
+
+        wet_offset = _param_scalar(mat, 'PrimitiveWetness', 0.0, GROUP_PRIMITIVE, -1250, -250, 2)
+        wet_offset.set_editor_property('use_custom_primitive_data', True)
+        wet_offset.set_editor_property('primitive_data_index', 5)
+
+        local_wet = _param_scalar(mat, 'Wetness_LocalAmount', 1.0, GROUP_WETNESS, -1250, -200, 0)
+
+        prim = custom(mat, _CODE_PRIMITIVE, CMOT.CMOT_FLOAT3,
+                      ['BaseColor', 'Roughness', 'Wetness', 'Tint', 'RoughnessOffset',
+                       'WetnessOffset', 'TintAmount'],
+                      [('OutRoughness', CMOT.CMOT_FLOAT1), ('OutWetness', CMOT.CMOT_FLOAT1)],
+                      -950, -300, 'Per-instance overrides')
+        link(variation, 'BaseColor', prim, 'BaseColor')
+        link(blend, 'Roughness', prim, 'Roughness')
+        link(local_wet, '', prim, 'Wetness')
+        link(tint, '', prim, 'Tint')
+        link(rough_offset, '', prim, 'RoughnessOffset')
+        link(wet_offset, '', prim, 'WetnessOffset')
+        link(_param_scalar(mat, 'PrimitiveTintAmount', 1.0, GROUP_PRIMITIVE, -1250, -150, 3),
+             '', prim, 'TintAmount')
+
+        sw_colour = _switch_param(mat, 'bPrimitiveData', prim, '', variation, 'BaseColor',
+                                  GROUP_PRIMITIVE, -800, -360)
+        sw_rough = _switch_param(mat, 'bPrimitiveData', prim, 'OutRoughness', blend, 'Roughness',
+                                 GROUP_PRIMITIVE, -800, -300)
+        sw_wet = _switch_param(mat, 'bPrimitiveData', prim, 'OutWetness', local_wet, '',
+                               GROUP_PRIMITIVE, -800, -240)
+        colour_src, colour_out = sw_colour, ''
+        rough_src, rough_out = sw_rough, ''
+        wet_local_src, wet_local_out = sw_wet, ''
+
     wet = _fn_call(mat, FN_ROOT + '/MF_MobSurfaceWetness', -600, -600)
-    link(variation, 'BaseColor', wet, 'BaseColor')
+    link(colour_src, colour_out, wet, 'BaseColor')
     link(blend, 'Normal', wet, 'Normal')
-    link(blend, 'Roughness', wet, 'Roughness')
+    link(rough_src, rough_out, wet, 'Roughness')
     link(_param_scalar(mat, 'Specular', 0.5, GROUP_GLOBAL, -900, -900, 0), '', wet, 'Specular')
     link(blend, 'Cavity', wet, 'Cavity')
     link(normal_z, '', wet, 'WorldNormalZ')
     link(weather, '', wet, 'Amount')
     link(wet_paint, '', wet, 'PaintWeight')
     wy = -250
-    for name, default, sort in (('LocalAmount', 1.0, 0), ('Darkening', 0.55, 20),
+    for name, default, sort in (('Darkening', 0.55, 20),
                                 ('RoughnessTarget', 0.25, 21), ('NormalFlatten', 0.4, 22),
                                 ('SpecularTarget', 0.5, 23), ('PorosityAmount', 1.0, 24),
                                 ('PuddleDepth', 0.15, 30), ('PuddleRoughness', 0.05, 31),
@@ -1259,6 +1320,11 @@ def build_master_material():
         link(_param_scalar(mat, 'Wetness_' + name, default, GROUP_WETNESS, -900, wy, sort),
              '', wet, name)
         wy += 50
+    if wet_local_src is not None:
+        link(wet_local_src, wet_local_out, wet, 'LocalAmount')
+    else:
+        link(_param_scalar(mat, 'Wetness_LocalAmount', 1.0, GROUP_WETNESS, -900, wy, 0),
+             '', wet, 'LocalAmount')
     link(_param_static_bool(mat, 'bWetness', False, GROUP_WETNESS, -900, wy, 90), '', wet, 'bEnabled')
 
     # --- finalise ---------------------------------------------------------
@@ -1376,7 +1442,7 @@ _SWITCH_DEFAULTS = {
     'Layer0_ParallaxOcclusion': False, 'Layer1_ParallaxOcclusion': False,
     'Layer2_ParallaxOcclusion': False,
     'bWetness': False, 'bColorVariation': False, 'bMacroVariation': False, 'bEmissive': False,
-    'bDetail': False,
+    'bDetail': False, 'bPrimitiveData': False,
 }
 
 
@@ -1391,6 +1457,8 @@ def build_material_instances():
             if switch.endswith('_TileBreak') and not INCLUDE_TILE_BREAK:
                 continue
             if '_Parallax' in switch and not INCLUDE_PARALLAX:
+                continue
+            if switch == 'bPrimitiveData' and not INCLUDE_PRIMITIVE_DATA:
                 continue
             MEL.set_material_instance_static_switch_parameter_value(
                 mi, switch, bool(overrides.get(switch, default)))

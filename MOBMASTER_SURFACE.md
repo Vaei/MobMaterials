@@ -12,6 +12,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The landscape master 
 | [Parallax](#parallax) | depth without geometry, cheap and expensive |
 | [Wetness](#wetness) | one global value, and what it does to a surface |
 | [Colour variation](#colour-variation) | per object, and across a single mesh |
+| [Per-instance data](#per-instance-data) | telling one actor to be a different colour |
 | [Cavity](#cavity) | micro shadowing, and why it never reaches the AO pin |
 | [Emissive](#emissive) | a masked glow |
 | [Detail](#detail) | the second normal that makes a surface hold up close |
@@ -135,6 +136,26 @@ Two independent sources, `bColorVariation` and `bMacroVariation`.
 **Macro** is low-frequency world-space noise, and it is the only mode that varies *across* a single mesh, which is what a long wall or a building needs. `NoiseScale`, `MacroTintA`/`B`, `MacroTintAmount`, `MacroValueAmount`.
 
 Per layer there is also `HueShift`, `Saturation`, `Value`, `Contrast` and `Tint`, so one texture set can serve several materials without costing more memory.
+
+## Per-instance data
+
+`bPrimitiveData`. Reads tint, a roughness offset and a wetness offset from **custom primitive data** on the component.
+
+This is the cheapest per-instance variation there is: no new material instance, no new shader permutation, and it can be set from Blueprint at runtime. It is also the one that scales - a thousand actors sharing one instance still draw as one material.
+
+Colour variation by position hash and this are not the same tool. The hash gives every copy *a* different tint; primitive data gives a copy *the* tint somebody chose.
+
+| Index | |
+|---|---|
+| 0, 1, 2, 3 | `PrimitiveTint`, multiplied over whatever the layers and the variation decided. A vector takes four |
+| 4 | `PrimitiveRoughness`, added |
+| 5 | `PrimitiveWetness`, added, before the global weather value scales it |
+
+Indices are fixed rather than exposed, because they are a contract with whatever sets them: change them here and every Blueprint calling `SetCustomPrimitiveDataFloat` silently means something else.
+
+Custom primitive data is a flag on a parameter rather than a node of its own, which is worth knowing: the parameter keeps its default when nothing sets the data, so an actor that was never told anything looks the way the instance says it should rather than black.
+
+On the component, set **Num Custom Data Floats** to at least 5.
 
 ## Cavity
 
