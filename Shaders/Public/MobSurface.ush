@@ -364,30 +364,57 @@ float3 MobWind(float3 WorldPos, float3 ObjectPos, float3 Direction, float Time,
 }
 
 // ---------------------------------------------------------------------------
-// Debug
+// Accumulation
 // ---------------------------------------------------------------------------
 
 /**
- * Replaces the shaded result with whichever intermediate the artist asked to see.
+ * How much of something settles here: snow on a ledge, dust on a shelf, ash on a sill.
  *
- * A blend you cannot see is a blend you cannot fix: layer weights in particular are invisible in
- * the final image precisely when they are wrong, because a bad weight looks like a texture
- * choice. Sent to emissive by the caller so it survives the lighting.
- *
- *   1 layer weights, red green blue per layer   4 wetness
- *   2 cavity                                    5 height
- *   3 blended normal                            6 vertex colour, as painted
+ * Driven by which way the surface faces, because that is what actually decides it - snow does not
+ * cling to a wall. Cavity biases it into the crevices, which is where a thin covering starts and
+ * the last of it survives, and the noise stops the line between covered and bare reading as a
+ * threshold.
  */
-float3 MobDebugView(int Mode, float3 Weights, float Cavity, float3 Normal, float Wetness,
-	float Height, float3 VertexColour)
+float MobAccumulation(float WorldNormalZ, float Cavity, float Noise, float Amount,
+	float Facing, float CavityBias, float NoiseAmount)
 {
-	if (Mode == 1) { return saturate(Weights); }
-	if (Mode == 2) { return saturate(Cavity).xxx; }
-	if (Mode == 3) { return saturate(Normal * 0.5f + 0.5f); }
-	if (Mode == 4) { return float3(saturate(Wetness), 0.0f, 0.0f); }
-	if (Mode == 5) { return saturate(Height).xxx; }
-	if (Mode == 6) { return saturate(VertexColour); }
-	return 0.0f.xxx;
+	const float Up = smoothstep(saturate(Facing), 1.0f, WorldNormalZ);
+	const float Crevice = lerp(1.0f, saturate(1.0f - Cavity), saturate(CavityBias));
+	const float Broken = lerp(1.0f, saturate(Noise * 2.0f), saturate(NoiseAmount));
+	return saturate(Amount * Up * Crevice * Broken);
+}
+
+/** Lays the covering over the surface: its own colour, its own roughness, its normal flattened toward it. */
+float3 MobApplyAccumulation(float3 BaseColor, float3 Normal, float Roughness, float3 Colour,
+	float CoverRoughness, float Mask, out float3 OutNormal, out float OutRoughness)
+{
+	OutNormal = MobFlattenNormal(Normal, Mask);
+	OutRoughness = lerp(Roughness, CoverRoughness, Mask);
+	return lerp(BaseColor, Colour, Mask);
+}
+
+// ---------------------------------------------------------------------------
+// Rain
+// ---------------------------------------------------------------------------
+
+/**
+ * Ripples on standing water. Two scrolling normals at different rates, so the interference never
+ * repeats on a period anyone can see, gated by the puddle mask so dry ground stays still.
+ *
+ * This is what separates wetness that reads as weather from wetness that reads as a darker
+ * texture: the surface has to be doing something, not just sitting there shinier.
+ */
+float3 MobRainRipples(float3 Normal, float3 RippleA, float3 RippleB, float Puddle, float Strength)
+{
+	const float3 Combined = MobBlendNormal(RippleA, RippleB, 0.5f);
+	return MobBlendNormal(Normal, Combined, saturate(Puddle) * saturate(Strength));
+}
+
+/** Two sets of scrolling coordinates for the above, drifting apart rather than together. */
+void MobRippleCoords(float2 UV, float Time, float Scale, float Speed, out float2 A, out float2 B)
+{
+	A = UV * Scale + float2(0.0f, Time * Speed);
+	B = UV * Scale * 1.37f - float2(Time * Speed * 0.73f, Time * Speed * 0.31f);
 }
 
 // ---------------------------------------------------------------------------

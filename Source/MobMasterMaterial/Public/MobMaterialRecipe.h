@@ -176,6 +176,38 @@ public:
 	bool bFoliage = false;
 
 	/**
+	 * Adds accumulation: a covering that settles by which way a surface faces - snow on a ledge,
+	 * dust on a shelf, ash on a sill - biased into crevices and broken up by noise.
+	 *
+	 * No extra samples. It reuses the cavity the layers already blended and the surface normal the
+	 * material already has.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
+		meta=(EditCondition="Kind == EMobMaterialKind::Surface", EditConditionHides))
+	bool bAccumulation = true;
+
+	/**
+	 * Adds rain ripples on standing water: two scrolling normals gated by the puddle mask, so dry
+	 * ground stays still.
+	 *
+	 * Two extra samples, and only where an instance turns them on. This is the difference between
+	 * wetness that reads as weather and wetness that reads as a darker texture.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
+		meta=(EditCondition="Kind == EMobMaterialKind::Surface", EditConditionHides))
+	bool bRainRipples = true;
+
+	/**
+	 * Adds debug views to the landscape master: layer weights, cavity, wetness and height.
+	 *
+	 * Layer weights on terrain are the case that matters most - a wrong weight there looks like a
+	 * texture choice rather than a mistake, and nothing downstream can reconstruct it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Landscape",
+		meta=(EditCondition="Kind == EMobMaterialKind::Landscape", EditConditionHides))
+	bool bLandscapeDebugViews = true;
+
+	/**
 	 * Parameter collection carrying the global wetness the surface master reads.
 	 *
 	 * Point several recipes at one collection and their materials go wet together. Leave it empty

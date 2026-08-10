@@ -87,6 +87,8 @@ def apply_landscape(module, recipe):
     module.RVT_TERRAIN = module.RVT_DIR + '/RVT_' + module.MASTER_NAME
     module.RVT_HEIGHT = module.RVT_DIR + '/RVT_' + module.MASTER_NAME + 'Height'
 
+    module.INCLUDE_DEBUG = bool(recipe.get_editor_property('landscape_debug_views'))
+
     module._log('%s: %d layer(s), %s, project outputs %s'
                 % (module.MASTER_NAME, len(module.LAYERS), module.ROOT,
                    'on' if module.BUILD_PROJECT_OUTPUTS else 'off'))
@@ -127,6 +129,8 @@ def apply_surface(module, recipe):
     module.INCLUDE_PRIMITIVE_DATA = bool(recipe.get_editor_property('primitive_data'))
     module.INCLUDE_DEBUG = bool(recipe.get_editor_property('debug_views'))
     module.FOLIAGE = bool(recipe.get_editor_property('foliage'))
+    module.INCLUDE_ACCUMULATION = bool(recipe.get_editor_property('accumulation'))
+    module.INCLUDE_RIPPLES = bool(recipe.get_editor_property('rain_ripples'))
 
     module._log('%s: %s, weather %s, detail %s'
                 % (module.MASTER_NAME, module.ROOT, module.WEATHER_MPC,

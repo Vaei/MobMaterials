@@ -9,6 +9,10 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "IPythonScriptPlugin.h"
 #include "MobMaterialRecipe.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/Paths.h"
+#include "Widgets/Notifications/SNotificationList.h"
 #include "Editor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Subsystems/AssetEditorSubsystem.h"
@@ -187,6 +191,61 @@ void FMobMasterMaterialEditorModule::OpenWindow()
 void FMobMasterMaterialEditorModule::GenerateRecipe(FSoftObjectPath Path)
 {
 	SMobGenerateWindow::Generate(Cast<UMobMaterialRecipe>(Path.TryLoad()));
+}
+
+bool FMobMasterMaterialEditorModule::RunPython(const FString& Snippet, const FText& DoneMessage)
+{
+	if (!IsPythonAvailable())
+	{
+		return false;
+	}
+
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("MobMasterMaterial"));
+	if (!Plugin.IsValid())
+	{
+		return false;
+	}
+
+	const FString ScriptDir = FPaths::Combine(
+		FPaths::ConvertRelativePathToFull(Plugin->GetBaseDir()), TEXT("Python")).Replace(TEXT("\\"), TEXT("/"));
+
+	const FString Command = FString::Printf(
+		TEXT("import sys\n")
+		TEXT("p = r'%s'\n")
+		TEXT("sys.path.append(p) if p not in sys.path else None\n")
+		TEXT("%s\n"), *ScriptDir, *Snippet);
+
+	const bool bOk = IPythonScriptPlugin::Get()->ExecPythonCommand(*Command);
+
+	FNotificationInfo Info(bOk ? DoneMessage
+		: LOCTEXT("PythonFailed", "Mob: failed. See the Output Log."));
+	Info.ExpireDuration = bOk ? 4.f : 8.f;
+	if (const TSharedPtr<SNotificationItem> Item = FSlateNotificationManager::Get().AddNotification(Info))
+	{
+		Item->SetCompletionState(bOk ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
+	}
+	return bOk;
+}
+
+void FMobMasterMaterialEditorModule::VerifyAll()
+{
+	TArray<FAssetData> Recipes;
+	FindRecipes(Recipes);
+
+	FString Snippet = TEXT("import importlib, mob_verify; importlib.reload(mob_verify)\n");
+	for (const FAssetData& Asset : Recipes)
+	{
+		Snippet += FString::Printf(TEXT("mob_verify.run(r'%s')\n"),
+			*Asset.ToSoftObjectPath().ToString());
+	}
+
+	RunPython(Snippet, LOCTEXT("VerifyDone", "Mob: verification finished. See the Output Log."));
+}
+
+void FMobMasterMaterialEditorModule::ReportAll()
+{
+	RunPython(TEXT("import importlib, mob_report; importlib.reload(mob_report); mob_report.run_all()"),
+		LOCTEXT("ReportDone", "Mob: report written to the Output Log."));
 }
 
 bool FMobMasterMaterialEditorModule::WeatherCollectionExists(FSoftObjectPath Path)

@@ -11,6 +11,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The landscape master 
 | [Tiling break](#tiling-break) | stopping a tiled surface reading as a grid at range |
 | [Parallax](#parallax) | depth without geometry, cheap and expensive |
 | [Wetness](#wetness) | one global value, and what it does to a surface |
+| [Accumulation](#accumulation) | snow, dust, ash - settling by which way a surface faces |
 | [Colour variation](#colour-variation) | per object, and across a single mesh |
 | [Per-instance data](#per-instance-data) | telling one actor to be a different colour |
 | [Cavity](#cavity) | micro shadowing, and why it never reaches the AO pin |
@@ -128,6 +129,22 @@ Leave **Parallax** off on the recipe and neither mode is in the master.
 Water reaches crevices before high points, because porosity comes from cavity (`PorosityAmount`). On top of that: `Darkening`, `RoughnessTarget`, `NormalFlatten`, `SpecularTarget`.
 
 Standing water is a harder threshold than the damp darkening around it: `PuddleDepth`, `PuddleRoughness`, and `PuddleFacing`, which gates puddles to up-facing surfaces so water does not cling to a wall.
+
+## Accumulation
+
+`bAccumulation`. A covering that settles by which way a surface faces - snow on a ledge, dust on a shelf, ash on a sill.
+
+| | |
+|---|---|
+| `Accumulation_Amount` | how much has fallen. The one to drive |
+| `Accumulation_Colour`, `Accumulation_CoverRoughness` | what it is |
+| `Accumulation_Facing` | how up-facing a surface must be to hold it. This is what makes it snow rather than paint |
+| `Accumulation_CavityBias` | how much it favours crevices, which is where a thin covering starts and the last of it survives |
+| `Accumulation_NoiseAmount` | breaks the line between covered and bare so it does not read as a threshold |
+
+No extra samples: it reuses the cavity the layers already blended and the surface normal the material already has. Snow, dust and ash are the same system with different numbers - see [`MOBMASTER_WEATHER.md`](./MOBMASTER_WEATHER.md) for values.
+
+It runs **after** wetness, so a covering sits on top of a wet surface rather than being darkened by it. That is the right order: snow that has just landed is not wet yet.
 
 ## Colour variation
 

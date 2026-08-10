@@ -37,6 +37,8 @@ MASTER_NAME = 'MobLandscape'
 # either way, and a project master reusing them keeps one copy of the maths.
 FN_ROOT = '/MobMasterMaterial/Landscape/Functions'
 
+INCLUDE_DEBUG = True
+
 INCLUDES = [
     '/MobMasterMaterial/Public/MobMaterialUtil.ush',
     '/MobMasterMaterial/Public/MobLandscapeBombing.ush',
@@ -1060,6 +1062,10 @@ return max(Base, 1.0f - saturate(Painted));
 """
 
 
+_CODE_DEBUG = """
+return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour);
+"""
+
 _CODE_GLOBAL_GRADE = """
 float3 Col = MobApplyHSV(BaseColor, GlobalHue, GlobalSaturation, GlobalValue) * GlobalTint;
 Col = lerp(Col, dot(Col, float3(0.299f, 0.587f, 0.114f)).xxx, saturate(DistanceDesaturation * DistanceFade));
@@ -1075,6 +1081,66 @@ OutRoughness = saturate(max(Roughness, GlobalRoughnessMin));
 OutSpecular = saturate(Specular * lerp(1.0f, Cavity, saturate(CavitySpecularAmount)));
 return max(Col, 0.0f);
 """
+
+
+
+def _landscape_debug(mat, blocks, acc, colour_src, normal_src, wet):
+    """Routes a debug view over the finished terrain.
+
+    The weights come from the first three paint layers rather than the blend, because a landscape
+    blend is a chain of pairs and there is no single place holding a triple. Three is enough to
+    read: it is the transitions between neighbouring layers that go wrong, not layer nine alone.
+    """
+    names = [layer for layer, _s, _p in LAYERS[:3]]
+    weights = []
+    for layer in names:
+        weights.append((blocks[layer][1], 'Weight'))
+    while len(weights) < 3:
+        zero = _expr(mat, unreal.MaterialExpressionConstant, 1400, 1400)
+        zero.set_editor_property('r', 0.0)
+        weights.append((zero, ''))
+
+    rg = _expr(mat, unreal.MaterialExpressionAppendVector, 1500, 1300)
+    link(weights[0][0], weights[0][1], rg, 'A')
+    link(weights[1][0], weights[1][1], rg, 'B')
+    rgb = _expr(mat, unreal.MaterialExpressionAppendVector, 1600, 1300)
+    link(rg, '', rgb, 'A')
+    link(weights[2][0], weights[2][1], rgb, 'B')
+
+    vcol = _expr(mat, unreal.MaterialExpressionVertexColor, 1400, 1500)
+
+    dbg = custom(mat, _CODE_DEBUG, CMOT.CMOT_FLOAT3,
+                 ['Mode', 'Weights', 'Cavity', 'Normal', 'Wetness', 'Height', 'VertexColour'],
+                 [], 1700, 1300, 'Debug view')
+    link(_param_scalar(mat, 'DebugMode', 1.0, 'Debug', 1400, 1200, 1), '', dbg, 'Mode')
+    link(rgb, '', dbg, 'Weights')
+    link(acc['Cavity'][0], acc['Cavity'][1], dbg, 'Cavity')
+    link(acc['Normal'][0], acc['Normal'][1], dbg, 'Normal')
+    link(wet, 'Mask', dbg, 'Wetness')
+    link(acc['Height'][0], acc['Height'][1], dbg, 'Height')
+    link(vcol, '', dbg, 'VertexColour')
+
+    black = _expr(mat, unreal.MaterialExpressionConstant3Vector, 1700, 1450)
+    black.set_editor_property('constant', unreal.LinearColor(0.0, 0.0, 0.0, 1.0))
+
+    # Terrain has no emissive to borrow, so the view goes to base colour with the normal flattened:
+    # an unlit read is the point, and a flat normal is the closest this gets to one.
+    flat = _expr(mat, unreal.MaterialExpressionConstant3Vector, 1700, 1550)
+    flat.set_editor_property('constant', unreal.LinearColor(0.0, 0.0, 1.0, 1.0))
+
+    sw_c = _expr(mat, unreal.MaterialExpressionStaticSwitchParameter, 1900, 1300)
+    sw_c.set_editor_property('parameter_name', 'bDebug')
+    sw_c.set_editor_property('group', 'Debug')
+    link(dbg, '', sw_c, 'True')
+    link(colour_src, '', sw_c, 'False')
+
+    sw_n = _expr(mat, unreal.MaterialExpressionStaticSwitchParameter, 1900, 1450)
+    sw_n.set_editor_property('parameter_name', 'bDebug')
+    sw_n.set_editor_property('group', 'Debug')
+    link(flat, '', sw_n, 'True')
+    link(normal_src, '', sw_n, 'False')
+
+    return sw_c, sw_n
 
 
 def build_master_material():
@@ -1315,6 +1381,9 @@ def build_master_material():
     sw_color = rvt_switch('BaseColor', grade, '', 1200, -700)
     sw_normal = rvt_switch('Normal', grade, 'OutNormal', 1200, -550)
     sw_rough = rvt_switch('Roughness', grade, 'OutRoughness', 1200, -400)
+
+    if INCLUDE_DEBUG:
+        sw_color, sw_normal = _landscape_debug(mat, blocks, acc, sw_color, sw_normal, wet)
 
     MEL.connect_material_property(sw_color, '', MP.MP_BASE_COLOR)
     MEL.connect_material_property(sw_normal, '', MP.MP_NORMAL)

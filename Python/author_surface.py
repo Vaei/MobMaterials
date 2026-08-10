@@ -66,6 +66,8 @@ INCLUDE_DEBUG = True
 
 # Foliage is a whole different master, not a switch: see build_master_material.
 FOLIAGE = False
+INCLUDE_ACCUMULATION = True
+INCLUDE_RIPPLES = True
 
 LAYERS = ['Layer0', 'Layer1', 'Layer2']
 
@@ -665,6 +667,25 @@ def build_blend_function():
 # Per instance, set on the component, so one material instance serves thousands of actors that all
 # look different. A hash of position cannot do that: it gives every copy a different tint, but
 # never the tint somebody chose.
+_CODE_ACCUMULATION = """
+float Mask = MobAccumulation(WorldNormalZ, Cavity, Noise, Amount, Facing, CavityBias, NoiseAmount);
+float3 Col = MobApplyAccumulation(BaseColor, Normal, Roughness, Colour, CoverRoughness, Mask,
+                                  OutNormal, OutRoughness);
+OutMask = Mask;
+return Col;
+"""
+
+_CODE_RIPPLE_UV = """
+float2 A, B;
+MobRippleCoords(UV, Time, Scale, Speed, A, B);
+OutB = B;
+return A;
+"""
+
+_CODE_RIPPLES = """
+return MobRainRipples(Normal, RippleA, RippleB, Puddle, Strength);
+"""
+
 _CODE_WIND = """
 return MobWind(WorldPos, ObjectPos, Direction, Time, Strength, Speed,
                FlutterStrength, FlutterSpeed, Weight);
@@ -1077,6 +1098,7 @@ def _switch_param(mat, name, true_src, true_out, false_src, false_out, group, x,
 GROUP_GLOBAL = '00 - Global'
 GROUP_BLEND = '10 - Blending'
 GROUP_WETNESS = '30 - Wetness'
+GROUP_ACCUM = '35 - Accumulation'
 GROUP_VARIATION = '40 - Variation'
 GROUP_PRIMITIVE = '05 - Per Instance'
 GROUP_DETAIL = '45 - Detail'
@@ -1354,11 +1376,82 @@ def build_master_material():
              '', wet, 'LocalAmount')
     link(_param_static_bool(mat, 'bWetness', False, GROUP_WETNESS, -900, wy, 90), '', wet, 'bEnabled')
 
+    # --- rain ripples -----------------------------------------------------
+    shaded_colour, shaded_colour_out = wet, 'BaseColor'
+    shaded_normal, shaded_normal_out = wet, 'Normal'
+    shaded_rough, shaded_rough_out = wet, 'Roughness'
+
+    if INCLUDE_RIPPLES:
+        rip_time = _expr(mat, unreal.MaterialExpressionTime, -500, 300)
+        rip_uv = custom(mat, _CODE_RIPPLE_UV, CMOT.CMOT_FLOAT2,
+                        ['UV', 'Time', 'Scale', 'Speed'], [('OutB', CMOT.CMOT_FLOAT2)],
+                        -400, 300, 'Ripple coordinates')
+        link(uv, '', rip_uv, 'UV')
+        link(rip_time, '', rip_uv, 'Time')
+        link(_param_scalar(mat, 'RippleScale', 12.0, GROUP_WETNESS, -600, 300, 40), '', rip_uv, 'Scale')
+        link(_param_scalar(mat, 'RippleSpeed', 0.25, GROUP_WETNESS, -600, 350, 41), '', rip_uv, 'Speed')
+
+        rip_tex = _param_texture(mat, 'RippleNormal', BASE_TEX_DETAIL, GROUP_WETNESS, -600, 400, 42)
+        rip_a = _expr(mat, unreal.MaterialExpressionTextureSample, -250, 260)
+        rip_b = _expr(mat, unreal.MaterialExpressionTextureSample, -250, 360)
+        for node, src, out in ((rip_a, rip_uv, ''), (rip_b, rip_uv, 'OutB')):
+            node.set_editor_property('sampler_source',
+                                     unreal.SamplerSourceMode.SSM_WRAP_WORLD_GROUP_SETTINGS)
+            node.set_editor_property('sampler_type', ST.SAMPLERTYPE_NORMAL)
+            node.set_editor_property('automatic_view_mip_bias', False)
+            link(rip_tex, '', node, 'Tex')
+            link(src, out, node, 'UVs')
+
+        ripples = custom(mat, _CODE_RIPPLES, CMOT.CMOT_FLOAT3,
+                         ['Normal', 'RippleA', 'RippleB', 'Puddle', 'Strength'], [],
+                         -100, 300, 'Rain ripples')
+        link(wet, 'Normal', ripples, 'Normal')
+        link(rip_a, 'RGB', ripples, 'RippleA')
+        link(rip_b, 'RGB', ripples, 'RippleB')
+        link(wet, 'Puddle', ripples, 'Puddle')
+        link(_param_scalar(mat, 'RippleStrength', 0.6, GROUP_WETNESS, -600, 450, 43),
+             '', ripples, 'Strength')
+
+        sw = _switch_param(mat, 'bRipples', ripples, '', wet, 'Normal', GROUP_WETNESS, 50, 300)
+        shaded_normal, shaded_normal_out = sw, ''
+
+    # --- accumulation -----------------------------------------------------
+    if INCLUDE_ACCUMULATION:
+        acc = custom(mat, _CODE_ACCUMULATION, CMOT.CMOT_FLOAT3,
+                     ['BaseColor', 'Normal', 'Roughness', 'WorldNormalZ', 'Cavity', 'Noise',
+                      'Colour', 'CoverRoughness', 'Amount', 'Facing', 'CavityBias', 'NoiseAmount'],
+                     [('OutNormal', CMOT.CMOT_FLOAT3), ('OutRoughness', CMOT.CMOT_FLOAT1),
+                      ('OutMask', CMOT.CMOT_FLOAT1)],
+                     -100, 600, 'Accumulation')
+        link(shaded_colour, shaded_colour_out, acc, 'BaseColor')
+        link(shaded_normal, shaded_normal_out, acc, 'Normal')
+        link(shaded_rough, shaded_rough_out, acc, 'Roughness')
+        link(normal_z, '', acc, 'WorldNormalZ')
+        link(blend, 'Cavity', acc, 'Cavity')
+        link(_param_scalar(mat, 'Accumulation_Noise', 0.5, GROUP_ACCUM, -600, 700, 5),
+             '', acc, 'Noise')
+        link(_param_vector(mat, 'Accumulation_Colour', (0.86, 0.89, 0.94), GROUP_ACCUM, -600, 600, 0),
+             '', acc, 'Colour')
+        for nm, dv, so in (('Amount', 0.0, 1), ('Facing', 0.55, 2), ('CavityBias', 0.35, 3),
+                           ('NoiseAmount', 0.4, 4), ('CoverRoughness', 0.85, 6)):
+            link(_param_scalar(mat, 'Accumulation_' + nm, dv, GROUP_ACCUM, -600, 750 + so * 50, so),
+                 '', acc, nm)
+
+        sw_c = _switch_param(mat, 'bAccumulation', acc, '', shaded_colour, shaded_colour_out,
+                             GROUP_ACCUM, 100, 600)
+        sw_n = _switch_param(mat, 'bAccumulation', acc, 'OutNormal', shaded_normal, shaded_normal_out,
+                             GROUP_ACCUM, 100, 660)
+        sw_r = _switch_param(mat, 'bAccumulation', acc, 'OutRoughness', shaded_rough, shaded_rough_out,
+                             GROUP_ACCUM, 100, 720)
+        shaded_colour, shaded_colour_out = sw_c, ''
+        shaded_normal, shaded_normal_out = sw_n, ''
+        shaded_rough, shaded_rough_out = sw_r, ''
+
     # --- finalise ---------------------------------------------------------
     final = _fn_call(mat, FN_ROOT + '/MF_MobSurfaceFinalise', 0, -600)
-    link(wet, 'BaseColor', final, 'BaseColor')
-    link(wet, 'Normal', final, 'Normal')
-    link(wet, 'Roughness', final, 'Roughness')
+    link(shaded_colour, shaded_colour_out, final, 'BaseColor')
+    link(shaded_normal, shaded_normal_out, final, 'Normal')
+    link(shaded_rough, shaded_rough_out, final, 'Roughness')
     link(wet, 'Specular', final, 'Specular')
     link(blend, 'Cavity', final, 'Cavity')
     link(vertex_shade, '', final, 'VertexShade')
@@ -1526,6 +1619,7 @@ _SWITCH_DEFAULTS = {
     'Layer2_ParallaxOcclusion': False,
     'bWetness': False, 'bColorVariation': False, 'bMacroVariation': False, 'bEmissive': False,
     'bDetail': False, 'bPrimitiveData': False, 'bDebug': False,
+    'bAccumulation': False, 'bRipples': False, 'bWind': False,
 }
 
 
@@ -1544,6 +1638,12 @@ def build_material_instances():
             if switch == 'bPrimitiveData' and not INCLUDE_PRIMITIVE_DATA:
                 continue
             if switch == 'bDebug' and not INCLUDE_DEBUG:
+                continue
+            if switch == 'bAccumulation' and not INCLUDE_ACCUMULATION:
+                continue
+            if switch == 'bRipples' and not INCLUDE_RIPPLES:
+                continue
+            if switch == 'bWind' and not FOLIAGE:
                 continue
             MEL.set_material_instance_static_switch_parameter_value(
                 mi, switch, bool(overrides.get(switch, default)))

@@ -82,7 +82,7 @@ UE5.8+
 - **Cavity, never ambient occlusion.** Micro shadowing multiplies base colour and specular; the AO pin stays free so it cannot double with the renderer's own occlusion
 - **A disabled feature is not compiled.** Its texture samples and its maths leave the shader entirely, rather than being multiplied by zero
 
-Full parameter-level detail is in [`MOBMASTER_LANDSCAPE.md`](./MOBMASTER_LANDSCAPE.md) and [`MOBMASTER_SURFACE.md`](./MOBMASTER_SURFACE.md).
+Full parameter-level detail is in [`MOBMASTER_LANDSCAPE.md`](./MOBMASTER_LANDSCAPE.md) and [`MOBMASTER_SURFACE.md`](./MOBMASTER_SURFACE.md). Making a world get wet, snowed on and dusty is a tutorial of its own: [`MOBMASTER_WEATHER.md`](./MOBMASTER_WEATHER.md).
 
 ### Texture packs
 
@@ -150,6 +150,12 @@ Enable the plugin, then author a master from a **recipe**. A recipe is an asset 
 **Mob → Generate Materials...** in the level editor toolbar. Pick a recipe or make one (Content Browser → Miscellaneous → Data Asset → Mob Material Recipe), set **Kind**, **Output Path** and **Asset Name**, then **Generate**.
 
 Every recipe in the project also appears directly on the **Mob** menu, so regenerating one later is a single click.
+
+| Also on the Mob menu | |
+|---|---|
+| **Verify Materials** | asserts what each master claims to cost - taps and samplers per feature, the ambient occlusion pin left free, primitive data indices unmoved. Results in the Output Log |
+| **Report Permutations and Memory** | how many distinct shader maps the instances add up to, and how much texture each master keeps resident |
+| **Open MPC_MobWeather** | straight to the wetness dial |
 
 Regenerating is idempotent: existing assets are emptied and rebuilt in place, so instances keep their references and their parameter values, and re-running is always safe.
 
