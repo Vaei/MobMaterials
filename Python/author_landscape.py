@@ -39,6 +39,12 @@ FN_ROOT = '/MobMasterMaterial/Landscape/Functions'
 
 INCLUDE_DEBUG = True
 
+# Sample the layers out of three texture arrays rather than three textures each. Pack the arrays
+# with mob_arrays.pack() before generating: the master samples whatever is at each slice index and
+# has no way to notice that a slice is not the art the layer wanted.
+TEXTURE_ARRAYS = False
+LAYER_TEXTURE_ROOT = ''
+
 INCLUDES = [
     '/MobMasterMaterial/Public/MobMaterialUtil.ush',
     '/MobMasterMaterial/Public/MobLandscapeBombing.ush',
@@ -349,11 +355,12 @@ def build_layer_function():
 
     ins = {}
 
-    ins['BC'] = fn_input(fn, 'BC', FIT.FUNCTION_INPUT_TEXTURE2D, -1400, -500, 0,
+    tex_type = FIT.FUNCTION_INPUT_TEXTURE2D_ARRAY if TEXTURE_ARRAYS else FIT.FUNCTION_INPUT_TEXTURE2D
+    ins['BC'] = fn_input(fn, 'BC', tex_type, -1400, -500, 0,
                          description='Base colour')
-    ins['NRM'] = fn_input(fn, 'NRM', FIT.FUNCTION_INPUT_TEXTURE2D, -1400, -400, 1,
+    ins['NRM'] = fn_input(fn, 'NRM', tex_type, -1400, -400, 1,
                           description='Tangent normal map')
-    ins['HRC'] = fn_input(fn, 'HRC', FIT.FUNCTION_INPUT_TEXTURE2D, -1400, -300, 2,
+    ins['HRC'] = fn_input(fn, 'HRC', tex_type, -1400, -300, 2,
                           description='R height, G roughness, B ambient occlusion')
     ins['UV'] = fn_input(fn, 'UV', FIT.FUNCTION_INPUT_VECTOR2, -1400, -200, 2,
                          default=(0.0, 0.0), description='Landscape layer coords')
@@ -369,6 +376,10 @@ def build_layer_function():
 
     ins['bHexTiling'] = fn_input(fn, 'bHexTiling', FIT.FUNCTION_INPUT_STATIC_BOOL, -1400, y, 70)
     ins['bDualScale'] = fn_input(fn, 'bDualScale', FIT.FUNCTION_INPUT_STATIC_BOOL, -1400, y + 60, 71)
+
+    if TEXTURE_ARRAYS:
+        ins['LayerIndex'] = fn_input(fn, 'LayerIndex', FIT.FUNCTION_INPUT_SCALAR, -1400, y + 120, 72,
+                                     default=0.0, description='Which slice of the layer arrays this layer is')
 
     # Coordinate generation. Deliberately touches no texture: see MobLandscapeBombing.ush.
     coord_outputs = []
@@ -387,6 +398,24 @@ def build_layer_function():
                 'SecondScale', 'BlendContrast', 'RotationAmount'):
         link(ins[pin], '', coords, pin)
 
+    # An array sample takes the slice as a third coordinate, and its gradients have to be the same
+    # width as the coordinate they differentiate - the slice does not vary across a pixel, so its
+    # derivative is zero. The appends feed taps, so a tier no switch selects prunes them too.
+    sliced = {}
+    if TEXTURE_ARRAYS:
+        zero = _fnexpr(fn, unreal.MaterialExpressionConstant, -1000, -1600)
+        zero.set_editor_property('r', 0.0)
+        y_slice = -1560
+        for out_name in ('', 'UVDual', 'UVHex1', 'UVHex2', 'UVHex3',
+                         'DXBase', 'DYBase', 'DXDual', 'DYDual',
+                         'DXHex1', 'DYHex1', 'DXHex2', 'DYHex2', 'DXHex3', 'DYHex3'):
+            ap = _fnexpr(fn, unreal.MaterialExpressionAppendVector, -850, y_slice)
+            link(coords, out_name, ap, 'A')
+            link(ins['LayerIndex'] if out_name.startswith('UV') or out_name == '' else zero,
+                 '', ap, 'B')
+            sliced[out_name] = ap
+            y_slice += 90
+
     def tap(texture_input, sampler_type, uv_out, ddx_out, ddy_out, x, y):
         """One TextureSample on the shared wrap sampler, with explicit gradients.
 
@@ -400,9 +429,14 @@ def build_layer_function():
         s.set_editor_property('sampler_type', sampler_type)
         s.set_editor_property('automatic_view_mip_bias', False)
         link(texture_input, '', s, 'Tex')
-        link(coords, uv_out, s, 'UVs')
-        link(coords, ddx_out, s, 'DDX(UVs)')
-        link(coords, ddy_out, s, 'DDY(UVs)')
+        if TEXTURE_ARRAYS:
+            link(sliced[uv_out], '', s, 'UVs')
+            link(sliced[ddx_out], '', s, 'DDX(UVs)')
+            link(sliced[ddy_out], '', s, 'DDY(UVs)')
+        else:
+            link(coords, uv_out, s, 'UVs')
+            link(coords, ddx_out, s, 'DDX(UVs)')
+            link(coords, ddy_out, s, 'DDY(UVs)')
         return s
 
     ST = unreal.MaterialSamplerType
@@ -1002,16 +1036,24 @@ _WEIGHT_CONTROLS = [
 ]
 
 
-def _build_layer_block(mat, layer, x, y, shared, layer_fn, weight_fn, sampled_weight=True):
+def _build_layer_block(mat, layer, x, y, shared, layer_fn, weight_fn, sampled_weight=True,
+                       layer_index=0):
     """One paint layer: texture parameters, controls, the layer function and its masked weight."""
     call = _fn_call(mat, layer_fn, x + 900, y)
 
-    for pin, default_path, sort in (('BC', BASE_TEX_BC, 0),
-                                    ('NRM', BASE_TEX_NRM, 1),
-                                    ('HRC', BASE_TEX_HRC, 2)):
-        tex = _param_texture(mat, '%s_%s' % (layer, pin), unreal.load_asset(default_path),
-                             layer, x, y + 90 * sort, sort)
-        link(tex, '', call, pin)
+    if TEXTURE_ARRAYS:
+        for pin in ('BC', 'NRM', 'HRC'):
+            link(shared['arrays'][pin], '', call, pin)
+        index = _expr(mat, unreal.MaterialExpressionConstant, x, y)
+        index.set_editor_property('r', float(layer_index))
+        link(index, '', call, 'LayerIndex')
+    else:
+        for pin, default_path, sort in (('BC', BASE_TEX_BC, 0),
+                                        ('NRM', BASE_TEX_NRM, 1),
+                                        ('HRC', BASE_TEX_HRC, 2)):
+            tex = _param_texture(mat, '%s_%s' % (layer, pin), unreal.load_asset(default_path),
+                                 layer, x, y + 90 * sort, sort)
+            link(tex, '', call, pin)
     link(shared['uv'], '', call, 'UV')
     link(shared['macro'], 'R', call, 'MacroNoise')
     link(shared['fade'], '', call, 'DistanceFade')
@@ -1198,18 +1240,30 @@ def build_master_material():
     shared = {'uv': coords, 'normal': wnormal, 'worldz': worldz,
               'fade': fade, 'macro': macro_tex, 'sun': sun}
 
+    if TEXTURE_ARRAYS:
+        # Three texture objects for the whole material, whatever the layer count. Sliced in the
+        # order mob_arrays packs them, which is the recipe's layer order with moss last.
+        shared['arrays'] = {}
+        for i, (pin, default_path) in enumerate((('BC', BASE_TEX_BC), ('NRM', BASE_TEX_NRM),
+                                                 ('HRC', BASE_TEX_HRC))):
+            path = '%s/TA_%s_%s' % (ROOT, MASTER_NAME, pin)
+            array = unreal.load_asset(path) or unreal.load_asset(default_path)
+            shared['arrays'][pin] = _param_texture(mat, 'Layers_' + pin, array,
+                                                   'Global', -3400, -560 + 60 * i, i)
+
     # --- paint layers -----------------------------------------------------
     blocks = {}
     x = -2600
     y = -400
-    for layer, _st, _pm in LAYERS:
-        blocks[layer] = _build_layer_block(mat, layer, x, y, shared, layer_fn, weight_fn)
+    for index, (layer, _st, _pm) in enumerate(LAYERS):
+        blocks[layer] = _build_layer_block(mat, layer, x, y, shared, layer_fn, weight_fn,
+                                           layer_index=index)
         y += 2200
 
     # Moss and wetness are overlays: they sample like a layer but their weight is a painted
     # alpha rather than a weight-blended one, so they do not compete for the normalised weight.
     moss_call, _ = _build_layer_block(mat, 'Moss', x, y, shared, layer_fn, weight_fn,
-                                      sampled_weight=False)
+                                      sampled_weight=False, layer_index=len(LAYERS))
     y += 2200
     moss_paint = _expr(mat, unreal.MaterialExpressionLandscapeLayerSample, x, y)
     moss_paint.set_editor_property('parameter_name', 'Moss')
@@ -1256,7 +1310,13 @@ def build_master_material():
         by += 400
 
     # --- slope rock -------------------------------------------------------
-    rock_call, _ = blocks['Rock']
+    # Slope rock takes over from whatever is painted past an angle, so it needs a layer to take
+    # over with. A layer named Rock is the intent; the last one is the fallback, because the
+    # alternative is a recipe that cannot be generated at all.
+    rock_layer = next((layer for layer, _s, _p in LAYERS if layer.lower() == 'rock'), LAYERS[-1][0])
+    if rock_layer != 'Rock':
+        _log('no layer named Rock - slope rock will use %s' % rock_layer)
+    rock_call, _ = blocks[rock_layer]
     slope = _fn_call(mat, FN_ROOT + '/MF_MobSlopeRock', -600, -400)
     for pin in _ATTR_PINS:
         src, out = acc[pin]
@@ -1899,9 +1959,16 @@ def build_layer_test_material(hex_tiling=True, dual_scale=False):
     tex_params = {}
     y_tex = -400
     for pin, default_path in (('BC', BASE_TEX_BC), ('NRM', BASE_TEX_NRM), ('HRC', BASE_TEX_HRC)):
+        if TEXTURE_ARRAYS:
+            default = unreal.load_asset('%s/TA_%s_%s' % (ROOT, MASTER_NAME, pin))
+            if default is None:
+                _log('no TA_%s_%s to test against - pack the arrays first' % (MASTER_NAME, pin))
+                return None, []
+        else:
+            default = unreal.load_asset(default_path)
         t = me(unreal.MaterialExpressionTextureObjectParameter, -900, y_tex)
         t.set_editor_property('parameter_name', pin)
-        t.set_editor_property('texture', unreal.load_asset(default_path))
+        t.set_editor_property('texture', default)
         tex_params[pin] = t
         y_tex += 150
 

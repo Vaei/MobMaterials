@@ -109,6 +109,23 @@ def _texture_parameters(mat):
     return sorted(set(names))
 
 
+def _dimensions(tex):
+    """The texture's built size.
+
+    Not blueprint_get_size_x: that reports whatever mip is resident right now, so a texture the
+    editor has not streamed in measures 32x32 and one it has measures 2048, for the same asset.
+    """
+    try:
+        size = tex.blueprint_get_built_texture_size()
+        return int(size.x), int(size.y)
+    except Exception:
+        pass
+    try:
+        return int(tex.blueprint_get_size_x()), int(tex.blueprint_get_size_y())
+    except Exception:
+        return 0, 0
+
+
 def _estimate_bytes(tex):
     """Resident size, estimated from dimensions and compression, mips included.
 
@@ -116,9 +133,10 @@ def _estimate_bytes(tex):
     one over, so this is arithmetic rather than a measurement - good enough to rank by and to spot
     the 4K that should have been a 512, which is what anyone actually wants from it.
     """
+    w, h = _dimensions(tex)
+    if not w or not h:
+        return 0
     try:
-        w = tex.blueprint_get_size_x()
-        h = tex.blueprint_get_size_y()
         setting = tex.get_editor_property('compression_settings')
     except Exception:
         return 0
@@ -156,8 +174,8 @@ def texture_memory():
                     continue
                 path = tex.get_path_name()
                 if path not in seen:
-                    seen[path] = (tex.get_name(), _estimate_bytes(tex),
-                                  tex.blueprint_get_size_x(), tex.blueprint_get_size_y())
+                    w, h = _dimensions(tex)
+                    seen[path] = (tex.get_name(), _estimate_bytes(tex), w, h)
 
         used = sum(v[1] for v in seen.values())
         grand += used

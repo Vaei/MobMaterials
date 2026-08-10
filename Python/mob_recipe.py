@@ -89,9 +89,15 @@ def apply_landscape(module, recipe):
 
     module.INCLUDE_DEBUG = bool(recipe.get_editor_property('landscape_debug_views'))
 
+    module.TEXTURE_ARRAYS = bool(recipe.get_editor_property('texture_array_layers'))
+    module.LAYER_TEXTURE_ROOT = _dir(recipe, 'layer_texture_root', module.LAYER_TEXTURE_ROOT)
+
     module._log('%s: %d layer(s), %s, project outputs %s'
                 % (module.MASTER_NAME, len(module.LAYERS), module.ROOT,
                    'on' if module.BUILD_PROJECT_OUTPUTS else 'off'))
+    module._log('  debug %s, texture arrays %s'
+                % ('on' if module.INCLUDE_DEBUG else 'off',
+                   'on' if module.TEXTURE_ARRAYS else 'off'))
     return module
 
 

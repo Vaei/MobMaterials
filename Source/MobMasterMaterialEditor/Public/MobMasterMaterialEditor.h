@@ -31,8 +31,16 @@ private:
 	/** What the project is spending: shader permutations, and texture held resident. */
 	static void ReportAll();
 
+	/** Packs one recipe's layer textures into the arrays its master samples. */
+	static void PackLayerArrays(FSoftObjectPath Path);
+
 	/** Runs a snippet against the plugin's Python directory. */
 	static bool RunPython(const FString& Snippet, const FText& DoneMessage);
+
+	/** Whether the toolbar button is shown. Per developer, not checked in. */
+	static bool IsToolbarMenuEnabled();
+	static void HideToolbarMenu();
+	static void OpenSettings();
 
 	/** Opens a weather collection so its wetness can be scrubbed without hunting for the asset. */
 	static void OpenWeatherCollection(FSoftObjectPath Path);

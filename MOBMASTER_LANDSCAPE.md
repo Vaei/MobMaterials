@@ -42,6 +42,29 @@ The **first layer is the base**: it holds whatever weight the painted layers lea
 
 Layers fold together through a chain of `MF_MobHeightBlendPair` rather than a `LandscapeLayerBlend` node, because a blend node exposes no weight to mask and the layers here have to be gated by slope and altitude.
 
+## Texture arrays
+
+**Texture Array Layers** on the recipe samples every layer out of three arrays - one per channel, one slice per layer - instead of three textures each.
+
+Texture count stops growing with layer count. The master carries a slice index per layer rather than three texture parameters, so the parameter list stays readable at eight layers and the material stops being the reason not to add a ninth.
+
+| Five layers plus moss | Texture parameters | Samplers | Pixel taps | PS instructions |
+|---|---|---|---|---|
+| Loose textures | 19 | 5 | 37 | 1779 |
+| Texture arrays | **4** | 5 | 37 | 1794 |
+
+The shader is not the point: samplers and taps are identical, and the slice appends cost about fifteen instructions. What changes is that eighteen texture objects become three, which is what makes a large layer set practical at all - and array slices share the wrap sampler exactly like loose textures do, so the sampler budget is no more in play than before.
+
+Set **Layer Texture Root** and run **Mob → Pack Layers for \<Recipe\>**. Each layer is matched by name against a channel suffix - `_BC`, `_BaseColor`, `_basecolor` for colour, `_NRM`, `_Normal` for normals, `_HRC`, `_HeigRougAO` for the mask pack - searched recursively, so per-layer subfolders are fine. The log lists the slice order and names any layer it could not resolve.
+
+Slices are the recipe's layer order, **with moss last**. Moss is an overlay the master adds itself rather than a layer anyone asked for, so if no moss texture is found it borrows the first layer's and says so, instead of failing the pack.
+
+> [!IMPORTANT]
+> Every layer's textures must share one resolution and one format per channel. That is what a texture array is, not a limitation here - and it is why the packer refuses rather than substituting. Swapping one layer's art means a repack, not a parameter change.
+
+> [!CAUTION]
+> Pack before generating, and repack after changing the layer list. The master samples whatever is at each slice index and cannot tell that a slice is not the art the layer wanted, so a stale array reads as the wrong texture on the wrong layer rather than as an error.
+
 ## Blending
 
 Shared by every transition, so the whole terrain reads the same:

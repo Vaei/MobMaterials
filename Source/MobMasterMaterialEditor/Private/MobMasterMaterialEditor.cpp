@@ -3,7 +3,10 @@
 #include "MobMasterMaterialEditor.h"
 
 #include "MobMasterMaterialEditorStyle.h"
+#include "MobMasterMaterialEditorUserSettings.h"
 #include "SMobGenerateWindow.h"
+
+#include "ISettingsModule.h"
 
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -52,7 +55,11 @@ void FMobMasterMaterialEditorModule::RegisterMenus()
 
 	FToolMenuEntry Entry = FToolMenuEntry::InitComboButton(
 		TEXT("MobMenu"),
-		FUIAction(),
+		FUIAction(
+			FExecuteAction(),
+			FCanExecuteAction(),
+			FIsActionChecked(),
+			FIsActionButtonVisible::CreateStatic(&FMobMasterMaterialEditorModule::IsToolbarMenuEnabled)),
 		FOnGetContent::CreateRaw(this, &FMobMasterMaterialEditorModule::BuildMenu),
 		LOCTEXT("MobToolbar", "Mob"),
 		LOCTEXT("MobToolbarTip", "Master material tools"),
@@ -132,13 +139,42 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 	// Every distinct weather collection the surface recipes name. Scrubbing wetness is the one
 	// thing done repeatedly while looking at a material, and the asset is otherwise buried.
 	TArray<FSoftObjectPath> Collections;
+	TArray<FAssetData> ArrayRecipes;
 	for (const FAssetData& Asset : Recipes)
 	{
-		if (const UMobMaterialRecipe* Recipe = Cast<UMobMaterialRecipe>(Asset.GetAsset());
-			Recipe && Recipe->Kind == EMobMaterialKind::Surface && !Recipe->WeatherCollection.IsNull())
+		const UMobMaterialRecipe* Recipe = Cast<UMobMaterialRecipe>(Asset.GetAsset());
+		if (!Recipe)
+		{
+			continue;
+		}
+		if (Recipe->Kind == EMobMaterialKind::Surface && !Recipe->WeatherCollection.IsNull())
 		{
 			Collections.AddUnique(Recipe->WeatherCollection.ToSoftObjectPath());
 		}
+		if (Recipe->Kind == EMobMaterialKind::Landscape && Recipe->bTextureArrayLayers)
+		{
+			ArrayRecipes.Add(Asset);
+		}
+	}
+
+	if (ArrayRecipes.Num() > 0)
+	{
+		Menu.BeginSection(TEXT("MobArrays"), LOCTEXT("ArraysSection", "Layer Arrays"));
+		for (const FAssetData& Asset : ArrayRecipes)
+		{
+			const FSoftObjectPath Path = Asset.ToSoftObjectPath();
+			Menu.AddMenuEntry(
+				FText::Format(LOCTEXT("PackArrays", "Pack Layers for {0}"),
+					FText::FromName(Asset.AssetName)),
+				LOCTEXT("PackArraysTip",
+					"Finds each layer's textures under the recipe's Layer Texture Root and packs them into "
+					"one array per channel. Run this before generating, and again whenever a layer's art "
+					"changes."),
+				FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.Texture2DArray")),
+				FUIAction(FExecuteAction::CreateStatic(
+					&FMobMasterMaterialEditorModule::PackLayerArrays, Path)));
+		}
+		Menu.EndSection();
 	}
 
 	if (Collections.Num() > 0)
@@ -161,6 +197,44 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 		}
 		Menu.EndSection();
 	}
+
+	if (Recipes.Num() > 0)
+	{
+		Menu.BeginSection(TEXT("MobTools"), LOCTEXT("ToolsSection", "Check"));
+		Menu.AddMenuEntry(
+			LOCTEXT("Verify", "Verify Contract"),
+			LOCTEXT("VerifyTip",
+				"Builds a scratch instance per feature and asserts what the documentation claims: what each "
+				"one costs in taps and samplers, that ambient occlusion is left alone, that the custom "
+				"primitive data indices have not moved."),
+			FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Check")),
+			FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::VerifyAll)));
+
+		Menu.AddMenuEntry(
+			LOCTEXT("Report", "Report Cost"),
+			LOCTEXT("ReportTip",
+				"Distinct shader permutations the instances add up to, and texture held resident per "
+				"master. Both otherwise surface at cook time."),
+			FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Statistics")),
+			FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::ReportAll)));
+		Menu.EndSection();
+	}
+
+	Menu.BeginSection(TEXT("MobSettings"), LOCTEXT("SettingsSection", "Settings"));
+	Menu.AddMenuEntry(
+		LOCTEXT("EditorSettings", "Editor Preferences"),
+		LOCTEXT("EditorSettingsTip", "Per-developer settings for this plugin. Not checked in."),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Toolbar.Settings")),
+		FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::OpenSettings)));
+
+	Menu.AddMenuEntry(
+		LOCTEXT("HideMenu", "Hide This Menu"),
+		LOCTEXT("HideMenuTip",
+			"Removes the Mob button from your toolbar. Turn it back on under Editor Preferences, Plugins, "
+			"Mob Master Material Editor."),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Visibility")),
+		FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::HideToolbarMenu)));
+	Menu.EndSection();
 
 	if (!IsPythonAvailable())
 	{
@@ -246,6 +320,39 @@ void FMobMasterMaterialEditorModule::ReportAll()
 {
 	RunPython(TEXT("import importlib, mob_report; importlib.reload(mob_report); mob_report.run_all()"),
 		LOCTEXT("ReportDone", "Mob: report written to the Output Log."));
+}
+
+void FMobMasterMaterialEditorModule::PackLayerArrays(FSoftObjectPath Path)
+{
+	const FString Snippet = FString::Printf(
+		TEXT("import importlib, mob_arrays; importlib.reload(mob_arrays); mob_arrays.pack(r'%s')"),
+		*Path.ToString());
+
+	RunPython(Snippet, LOCTEXT("PackDone", "Mob: layer arrays packed. See the Output Log."));
+}
+
+bool FMobMasterMaterialEditorModule::IsToolbarMenuEnabled()
+{
+	return GetDefault<UMobMasterMaterialEditorUserSettings>()->bShowToolbarMenu;
+}
+
+void FMobMasterMaterialEditorModule::HideToolbarMenu()
+{
+	UMobMasterMaterialEditorUserSettings* Settings =
+		GetMutableDefault<UMobMasterMaterialEditorUserSettings>();
+	Settings->bShowToolbarMenu = false;
+	Settings->SaveConfig();
+}
+
+void FMobMasterMaterialEditorModule::OpenSettings()
+{
+	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>(TEXT("Settings")))
+	{
+		const UMobMasterMaterialEditorUserSettings* Settings =
+			GetDefault<UMobMasterMaterialEditorUserSettings>();
+		SettingsModule->ShowViewer(Settings->GetContainerName(), Settings->GetCategoryName(),
+			Settings->GetSectionName());
+	}
 }
 
 bool FMobMasterMaterialEditorModule::WeatherCollectionExists(FSoftObjectPath Path)

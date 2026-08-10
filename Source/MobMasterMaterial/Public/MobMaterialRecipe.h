@@ -208,6 +208,33 @@ public:
 	bool bLandscapeDebugViews = true;
 
 	/**
+	 * Samples the paint layers out of three texture arrays instead of three textures per layer.
+	 *
+	 * Texture count stops growing with layer count: eight layers is three texture objects rather
+	 * than twenty-four, and the master carries one slice index per layer instead of three texture
+	 * parameters. Worth it past about four layers, and the only way to go much beyond eight.
+	 *
+	 * The cost is that a slice cannot differ from its neighbours: every layer's textures must
+	 * share one resolution and one format per channel, and swapping one layer's art means a
+	 * repack rather than a parameter change. Pack Layer Arrays from the Mob menu does the packing
+	 * and says which layer failed to match.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Landscape",
+		meta=(EditCondition="Kind == EMobMaterialKind::Landscape", EditConditionHides))
+	bool bTextureArrayLayers = false;
+
+	/**
+	 * Folder searched for each layer's textures when packing.
+	 *
+	 * A layer matches a texture whose name contains the layer name and ends with a known channel
+	 * suffix - _BC, _BaseColor, _basecolor for colour, _NRM, _Normal for normals, _HRC,
+	 * _HeigRougAO for the mask pack. Searched recursively, so per-layer subfolders are fine.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Landscape", meta=(ContentDir,
+		EditCondition="Kind == EMobMaterialKind::Landscape && bTextureArrayLayers", EditConditionHides))
+	FDirectoryPath LayerTextureRoot;
+
+	/**
 	 * Parameter collection carrying the global wetness the surface master reads.
 	 *
 	 * Point several recipes at one collection and their materials go wet together. Leave it empty

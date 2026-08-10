@@ -153,9 +153,12 @@ Every recipe in the project also appears directly on the **Mob** menu, so regene
 
 | Also on the Mob menu | |
 |---|---|
-| **Verify Materials** | asserts what each master claims to cost - taps and samplers per feature, the ambient occlusion pin left free, primitive data indices unmoved. Results in the Output Log |
-| **Report Permutations and Memory** | how many distinct shader maps the instances add up to, and how much texture each master keeps resident |
+| **Verify Contract** | asserts what each master claims to cost - taps and samplers per feature, the ambient occlusion pin left free, primitive data indices unmoved. Results in the Output Log |
+| **Report Cost** | how many distinct shader maps the instances add up to, and how much texture each master keeps resident |
+| **Pack Layers for \<Recipe\>** | packs a landscape recipe's layer textures into the arrays its master samples. Only listed for recipes using them |
 | **Open MPC_MobWeather** | straight to the wetness dial |
+| **Editor Preferences** | per-developer settings, not checked in |
+| **Hide This Menu** | takes the Mob button off your toolbar. Turn it back on under Editor Preferences, Plugins, Mob Master Material Editor |
 
 Regenerating is idempotent: existing assets are emptied and rebuilt in place, so instances keep their references and their parameter values, and re-running is always safe.
 
@@ -204,6 +207,8 @@ Set the recipe's **Layers** - the first is the base, and it holds whatever weigh
 
 Layer count is built into the material graph, so it cannot be changed on an instance - edit the recipe and generate again.
 
+Past about four layers, tick **Texture Array Layers**: every layer is then one slice of three arrays rather than three textures of its own, so eight layers is three texture objects instead of twenty-four. Set **Layer Texture Root**, run **Mob → Pack Layers**, then generate.
+
 > [!NOTE]
 > Full documentation: [`MOBMASTER_LANDSCAPE.md`](./MOBMASTER_LANDSCAPE.md).
 
@@ -212,6 +217,10 @@ Layer count is built into the material graph, so it cannot be changed on an inst
 **Test Level** in the generate window builds a level demonstrating a surface master, one feature per object - plain, three-layer blend, vertex paint, triplanar, wetness, per-object variation, emissive - using the placeholder textures and separating the layers by tint, so nothing needs art to read.
 
 It opens a new level, so it asks first.
+
+### Then what
+
+[`MOBMASTER_TUTORIAL.md`](./MOBMASTER_TUTORIAL.md) walks the whole feature set in the order that needs the least backtracking - layers and blending, tiling break, detail, parallax, per-instance variation, weather, foliage, terrain - with the wrong turns people actually hit. Start there once the above works.
 
 ### Runtime virtual texture, footsteps, grass
 
