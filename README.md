@@ -164,6 +164,8 @@ Start from whichever preset is closest instead of turning switches on yourself -
 
 To make it rain, set `Wetness` on the recipe's weather collection from Blueprint or code. Point several recipes at one collection and their materials go wet together.
 
+**Mob → Open MPC_MobWeather** goes straight to it: drag `Wetness` 0 to 1 and every instance with wetness on follows, live in the viewport. The menu lists every collection the surface recipes name.
+
 > [!NOTE]
 > **You do not have to fill a mesh with black before painting.** Most layered materials read vertex colour straight, which means every layer at full weight.
 > <br>

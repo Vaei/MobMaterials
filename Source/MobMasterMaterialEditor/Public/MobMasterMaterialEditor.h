@@ -25,6 +25,10 @@ private:
 	static void OpenWindow();
 	static void GenerateRecipe(FSoftObjectPath Path);
 
+	/** Opens a weather collection so its wetness can be scrubbed without hunting for the asset. */
+	static void OpenWeatherCollection(FSoftObjectPath Path);
+	static bool WeatherCollectionExists(FSoftObjectPath Path);
+
 	/** Python is only needed to generate; a material already authored works without it. */
 	static bool IsPythonAvailable();
 };

@@ -9,7 +9,9 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "IPythonScriptPlugin.h"
 #include "MobMaterialRecipe.h"
+#include "Editor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 #include "Styling/AppStyle.h"
 #include "ToolMenus.h"
 #include "Widgets/Text/STextBlock.h"
@@ -123,6 +125,39 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 		Menu.EndSection();
 	}
 
+	// Every distinct weather collection the surface recipes name. Scrubbing wetness is the one
+	// thing done repeatedly while looking at a material, and the asset is otherwise buried.
+	TArray<FSoftObjectPath> Collections;
+	for (const FAssetData& Asset : Recipes)
+	{
+		if (const UMobMaterialRecipe* Recipe = Cast<UMobMaterialRecipe>(Asset.GetAsset());
+			Recipe && Recipe->Kind == EMobMaterialKind::Surface && !Recipe->WeatherCollection.IsEmpty())
+		{
+			Collections.AddUnique(FSoftObjectPath(Recipe->WeatherCollection));
+		}
+	}
+
+	if (Collections.Num() > 0)
+	{
+		Menu.BeginSection(TEXT("MobWeather"), LOCTEXT("WeatherSection", "Weather"));
+		for (const FSoftObjectPath& Path : Collections)
+		{
+			const FString Name = Path.GetAssetName();
+			Menu.AddMenuEntry(
+				FText::Format(LOCTEXT("OpenWeather", "Open {0}"), FText::FromString(Name)),
+				LOCTEXT("OpenWeatherTip",
+					"Opens the parameter collection carrying global wetness. Drag Wetness 0 to 1 and every "
+					"instance with wetness on follows, live in the viewport."),
+				FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Edit")),
+				FUIAction(
+					FExecuteAction::CreateStatic(
+						&FMobMasterMaterialEditorModule::OpenWeatherCollection, Path),
+					FCanExecuteAction::CreateStatic(
+						&FMobMasterMaterialEditorModule::WeatherCollectionExists, Path)));
+		}
+		Menu.EndSection();
+	}
+
 	if (!IsPythonAvailable())
 	{
 		Menu.BeginSection(TEXT("MobPython"));
@@ -152,6 +187,20 @@ void FMobMasterMaterialEditorModule::OpenWindow()
 void FMobMasterMaterialEditorModule::GenerateRecipe(FSoftObjectPath Path)
 {
 	SMobGenerateWindow::Generate(Cast<UMobMaterialRecipe>(Path.TryLoad()));
+}
+
+bool FMobMasterMaterialEditorModule::WeatherCollectionExists(FSoftObjectPath Path)
+{
+	// The collection is authored by the generator, so before a first run it will not be there yet.
+	return FPackageName::DoesPackageExist(Path.GetLongPackageName());
+}
+
+void FMobMasterMaterialEditorModule::OpenWeatherCollection(FSoftObjectPath Path)
+{
+	if (UObject* Collection = Path.TryLoad(); Collection && GEditor)
+	{
+		GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Collection);
+	}
 }
 
 #undef LOCTEXT_NAMESPACE
