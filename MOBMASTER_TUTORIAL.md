@@ -9,6 +9,7 @@ This picks up where the [README](./README.md) leaves off: the plugin is enabled,
 | [Read this first](#read-this-first) | three facts that explain every decision here |
 | [The fast path](#the-fast-path) | the whole thing, in order, ~20 minutes |
 | [1. Decide the recipe](#1-decide-the-recipe) | what goes in the master, once |
+| [Art you have to supply](#art-you-have-to-supply) | four placeholders that read as broken features |
 | [2. One good surface](#2-one-good-surface) | layers, blending, projection |
 | [3. Make it hold up](#3-make-it-hold-up) | tiling break, detail, parallax |
 | [4. Make it vary](#4-make-it-vary) | vertex paint, colour variation, primitive data |
@@ -24,9 +25,11 @@ This picks up where the [README](./README.md) leaves off: the plugin is enabled,
 
 ## Read this first
 
-**A feature you do not turn on does not exist.** Gating is done with static bools on material function inputs, and an input no live branch reads is never compiled - so a disabled layer takes its texture samples with it. Turning everything on to "see what it does" and turning it back off later costs nothing but your time.
+**A feature you do not turn on does not exist.** Gating is done with static bools on material function inputs, and an input no live branch reads is never compiled - so a disabled layer takes its texture samples with it.
 
-**Recipe options and instance switches are different things.** The recipe decides what is *in* the master; the switch decides whether an *instance* uses it. A recipe option left off means the feature is not in the graph at all, so nothing can enable it. Getting the recipe right once saves regenerating later, which is the slow step.
+**Recipe options and instance switches are different things.** The recipe decides what is *in* the master; the switch decides whether an *instance* uses it.
+
+**Every `b`-prefixed name below is a switch on the material instance.** Open the instance, and it is in the Details panel under its parameter group - tick the checkbox on the left to override it, then the one on the right to turn it on. The scalars and textures beside it work the same way. Nothing here is set on the master or the recipe; the master only decides which of them exist.
 
 **Presets exist to keep the permutation count down.** Every distinct combination of static switches is another shader map, multiplied by every mesh type that wears it. Parent to the preset closest to what you want rather than turning switches on from the base master, and reuse presets across assets.
 
@@ -69,6 +72,27 @@ Parallax is the exception worth thinking about: the cheap offset mode is fine, b
 
 Foliage is not an option so much as a fork - shading model, two-sidedness and blend mode are material properties rather than parameters, so a foliage master cannot be a switch on a standard one. Point a second recipe at the same output path with a different asset name.
 
+## Art you have to supply
+
+Every texture parameter defaults to a 4x4 neutral from the plugin, so nothing is ever unassigned and no base material drags art into memory. Four of those neutrals are placeholders rather than defaults you would ship - the feature compiles and costs what it costs, but a flat texture makes it look like nothing is happening.
+
+| Parameter | Default | What it wants | Symptom if left |
+|---|---|---|---|
+| `MacroNoiseTexture` | `T_BaseLinear` | a large, soft greyscale noise, tiled very low | macro variation does nothing - the noise is a constant |
+| `RippleNormal` | `T_BaseNormal` | any tiling normal; a real ripple texture beats generic noise | ripples cost their two samples and the puddle stays glassy |
+| `DetailNormal` | `T_BaseNormal` | a fine, high-frequency normal | detail costs its sample and adds no detail |
+| `EmissiveMask` | `T_BaseBlack` | white where it should glow | emissive is on and nothing glows - black masks everything |
+
+> [!IMPORTANT]
+> These are the ones to check first when a feature "does not work". The switch is on, the cost is real, and the input is flat - which reads exactly like a broken feature.
+
+The plugin ships no noise texture of its own on purpose: a noise map is art, and one that suits a stylised project ruins a realistic one. Any tiling greyscale noise works, and the engine already carries two worth starting from:
+
+| | |
+|---|---|
+| `/Engine/EngineMaterials/T_Default_MacroVariation` | low frequency. What `MacroNoiseTexture` wants |
+| `/Engine/EngineMaterials/Good64x64TilingNoiseHighFreq` | high frequency. Usable as a stand-in for `DetailNormal` and `RippleNormal` until there is real art, though both would rather have a normal map than a greyscale |
+
 ## 2. One good surface
 
 Right-click `MI_<Name>_Prop` → **Create Material Instance**. That preset has everything off, three texture samples, and is the cheapest thing the master can be.
@@ -100,7 +124,7 @@ Set `TileBreakScale` to something irrational-ish - 0.37, not 0.5. At 0.5 the two
 
 The two tilings combine as an overlay rather than a lerp, because a lerp of two scales halves the contrast and reads as blur - trading one artefact for another.
 
-**Detail** - `bDetail`, a fine tiling normal, `DetailScale` around 8, `DetailAmount` to taste. One extra sample for the whole material, faded out with distance. This is most of what separates a base layer from a finished one up close.
+**Detail** - `bDetail`, then point `DetailNormal` at a fine tiling normal, `DetailScale` around 8, `DetailAmount` to taste. It defaults to a flat normal, so without that it costs a sample and shows nothing. One extra sample for the whole material, faded out with distance. This is most of what separates a base layer from a finished one up close.
 
 **Parallax** - `LayerN_Parallax` for the cheap offset mode. `ParallaxAmount` small: 0.02 to 0.06. Past that the surface swims. Sells brick, cobbles and plank gaps at anything but a grazing angle. `LayerN_ParallaxOcclusion` raymarches instead, which is genuinely expensive and brings its own sampler.
 
@@ -133,7 +157,7 @@ Wetness is a state the world is in rather than a per-material look, which is why
 
 Start with only `RoughnessTarget` and `Darkening`. Wet is mostly a roughness change. If it does not read at `Wetness` 1 with those two alone, the problem is the lighting.
 
-Then `bRipples` for rain, and `bAccumulation` for snow, dust or ash - same system, different numbers.
+Then `bRipples` for rain - set `RippleNormal` too, it defaults to flat - and `bAccumulation` for snow, dust or ash, which needs no art at all.
 
 > [!NOTE]
 > Weather has a tutorial of its own with the numbers for each: [`MOBMASTER_WEATHER.md`](./MOBMASTER_WEATHER.md).
@@ -206,7 +230,7 @@ Generating also authors `MF_<Name>RVTBlend`, which fades a mesh into the terrain
 
 The single biggest time saver here, and it costs nothing until asked.
 
-`bDebug` on, then `DebugMode`:
+`bDebug` on the instance, then `DebugMode`:
 
 | | |
 |---|---|
@@ -242,6 +266,7 @@ Two things on the Mob menu, both of which answer questions that otherwise surfac
 |---|---|
 | **Turned a switch on and nothing happened** | the recipe option is off, so the feature is not in the master. Turn it on, regenerate |
 | **Everything is soaking wet and the top layer** | vertex colour convention. Black adds, white is neutral - an unpainted mesh should read as the base layer. If it does not, something has filled the mesh with black |
+| **A feature is on and nothing changed** | its texture is still the flat placeholder. See [Art you have to supply](#art-you-have-to-supply) |
 | **Ripples do nothing** | they are gated by the puddle mask. Check debug view 4 first: no puddle, no ripple. Raise `PuddleDepth` or check the surface is facing up |
 | **Wetness reads as a darker texture** | `RoughnessTarget` is not low enough. Wet is mostly a roughness change |
 | **Tiling break made it blurry** | `TileBreakScale` too close to a simple fraction, or `TileBreakAmount` too high. Try 0.37 |
