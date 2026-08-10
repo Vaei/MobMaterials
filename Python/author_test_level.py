@@ -17,9 +17,6 @@ import unreal
 MEL = unreal.MaterialEditingLibrary
 EAL = unreal.EditorAssetLibrary
 
-SWITCHES = ['bVertexPaint', 'bLayer1', 'bLayer2', 'Layer0_Triplanar', 'Layer1_Triplanar',
-            'Layer2_Triplanar', 'bWetness', 'bColorVariation', 'bMacroVariation', 'bEmissive']
-
 SPHERE = '/Engine/BasicShapes/Sphere'
 CUBE = '/Engine/BasicShapes/Cube'
 
@@ -42,9 +39,13 @@ def _instance(path, name, parent):
 
 
 def _setup(mi, switches=None, scalars=None, vectors=None, textures=None):
-    for key in SWITCHES:
+    # Every switch the master carries is set explicitly, off unless asked for, so a demo shows one
+    # feature and reruns cannot leave a stale switch on. Reading them off the master rather than a
+    # list here is what stops a new feature from being silently undemoable.
+    switches = switches or {}
+    for key in MEL.get_static_switch_parameter_names(mi.get_editor_property('parent')):
         MEL.set_material_instance_static_switch_parameter_value(
-            mi, key, bool((switches or {}).get(key, False)))
+            mi, key, bool(switches.get(str(key), False)))
     for key, value in (scalars or {}).items():
         MEL.set_material_instance_scalar_parameter_value(mi, key, float(value))
     for key, (r, g, b) in (vectors or {}).items():
@@ -112,6 +113,41 @@ def build(recipe):
          {'EmissiveMask': '/MobMasterMaterial/Textures/T_BaseWhite'}),
     ]
 
+    # Everything past the original set depends on a recipe option, so each is offered only when the
+    # master actually carries its switch. A demo for a feature that was not authored would be a
+    # sphere that silently looks like the plain one.
+    optional = [
+        ('Detail', 'a fine normal over the base, faded out with distance. One extra sample',
+         {'bDetail': True}, {'DetailScale': 8.0, 'DetailAmount': 1.0}, {'Layer0_Tint': STONE}),
+        ('TileBreak', 'a second incommensurate tiling faded in with distance. Walk backwards',
+         {'Layer0_TileBreak': True},
+         {'Layer0_TileBreakScale': 0.37, 'Layer0_TileBreakStart': 200.0,
+          'Layer0_TileBreakAmount': 1.0}, {'Layer0_Tint': STONE}),
+        ('Parallax', 'the cheap offset mode. Depth without touching the silhouette',
+         {'Layer0_Parallax': True}, {'Layer0_ParallaxAmount': 0.04}, {'Layer0_Tint': STONE}),
+        ('Accumulation', 'a covering settling by which way the surface faces. Drive the amount',
+         {'bAccumulation': True},
+         {'Accumulation_Amount': 0.6, 'Accumulation_Facing': 0.5,
+          'Accumulation_CavityBias': 0.5, 'Accumulation_CoverRoughness': 0.85},
+         {'Layer0_Tint': EARTH, 'Accumulation_Colour': (0.92, 0.94, 1.0)}),
+        ('Ripples', 'rain on standing water. Needs the collection wetness up, and a ripple normal',
+         {'bWetness': True, 'bRipples': True},
+         {'Wetness_PuddleDepth': 0.7, 'Wetness_PuddleFacing': 0.4,
+          'Wetness_PuddleRoughness': 0.02, 'RippleScale': 12.0, 'RippleStrength': 1.0},
+         {'Layer0_Tint': EARTH}),
+        ('Debug', 'layer weights sent to emissive with base colour blacked out',
+         {'bLayer1': True, 'bLayer2': True, 'bDebug': True},
+         {'Layer1Weight': 0.5, 'Layer2Weight': 0.3, 'DebugMode': 1.0},
+         {'Layer0_Tint': STONE, 'Layer1_Tint': EARTH, 'Layer2_Tint': MOSS}),
+    ]
+
+    available = set(str(n) for n in MEL.get_static_switch_parameter_names(master))
+    for entry in optional:
+        if all(switch in available for switch in entry[2]):
+            demos.append(entry)
+        else:
+            _log('skipping the %s demo - not in this master' % entry[0])
+
     built = {}
     for entry in demos:
         key, _tip, switches, scalars, vectors = entry[:5]
@@ -143,6 +179,16 @@ def build(recipe):
     for i in range(5):
         place('Mob_Variation_%d' % i, sphere, built['Variation'],
               (i - 2) * spacing, 420.0, 150.0, 1.2)
+
+    # Per-instance data: one material instance, three actors, three tints. No new permutation.
+    if 'bPrimitiveData' in available:
+        prim = _setup(_instance(tests, 'MI_%s_PrimitiveData' % name, master),
+                      {'bPrimitiveData': True}, {}, {'Layer0_Tint': STONE})
+        for i, tint in enumerate(((0.8, 0.3, 0.25), (0.3, 0.55, 0.8), (0.85, 0.75, 0.3))):
+            a = place('Mob_PrimitiveData_%d' % i, sphere, prim, (i - 1) * spacing, 780.0, 150.0, 1.2)
+            # The default variant, not the runtime one: only that is saved with the level.
+            a.static_mesh_component.set_default_custom_primitive_data_vector3(
+                0, unreal.Vector(tint[0], tint[1], tint[2]))
 
     floor = place('Mob_Floor', unreal.load_asset(CUBE), built['Plain'], 0.0, 150.0, 0.0, 1.0)
     floor.set_actor_scale3d(unreal.Vector(24.0, 12.0, 0.5))

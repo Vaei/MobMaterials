@@ -286,4 +286,11 @@ Every distinct set of static switches is a distinct shader map, and PSOs are per
 ## Changelog
 
 ### 1.0.0
-* Initial Release
+* Initial release
+* Landscape master: paint layers with height-interlocked blending, stochastic hex tiling and a cheap dual-scale tier, slope rock, moss placed by cavity and slope, slope and altitude layer masks, wetness, optional texture array layers
+* Surface master: three layers, vertex paint, triplanar, height blending, detail normals, distance tiling break, parallax offset and occlusion, wetness with puddles and rain ripples, accumulation for snow, dust and ash, colour and macro variation, custom primitive data, emissive
+* Foliage master: masked, two-sided foliage shading, subsurface, wind on world position offset
+* Project integration: runtime virtual texture with mesh blending, physical material output for footsteps, grass output
+* Debug views on both masters, sent to emissive with base colour blacked out
+* Recipe assets drive generation, so a project carries as many masters as it needs
+* Mob toolbar menu: generate, pack layer arrays, test level, contract verification, cost reporting, weather collection, and a per-developer hide

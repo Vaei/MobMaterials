@@ -37,6 +37,9 @@ SURFACE_EXPECT = [
     ('per-instance data', ['bPrimitiveData'], dict(tex=3, samplers=4)),
     ('debug', ['bDebug'], dict(samplers=4)),
     ('emissive', ['bEmissive'], dict(tex=4, samplers=4)),
+    # Accumulation reuses the cavity and normal the material already has, so no extra taps.
+    ('accumulation', ['bAccumulation'], dict(tex=3, samplers=4)),
+    ('rain ripples', ['bWetness', 'bRipples'], dict(tex=5, samplers=4)),
 ]
 
 
