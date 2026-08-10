@@ -1,8 +1,8 @@
 # Everything, Fast
 
-Getting from a working master material to the full feature set, in the order that needs the least backtracking.
+Getting from a working master material to the full feature set.
 
-This picks up where the [README](./README.md) leaves off: the plugin is enabled, you have a recipe, and you have generated a master and put an instance on a mesh. If not, do that first - it takes about two minutes and everything below assumes it.
+This picks up where the [README](./README.md) leaves off: the plugin is enabled, you have a recipe, and you have generated a master and put an instance on a mesh.
 
 | | |
 |---|---|
@@ -28,8 +28,6 @@ This picks up where the [README](./README.md) leaves off: the plugin is enabled,
 **A feature you do not turn on does not exist.** Gating is done with static bools on material function inputs, and an input no live branch reads is never compiled - so a disabled layer takes its texture samples with it.
 
 **Recipe options and instance switches are different things.** The recipe decides what is *in* the master; the switch decides whether an *instance* uses it.
-
-**Every `b`-prefixed name below is a switch on the material instance.** Open the instance, and it is in the Details panel under its parameter group - tick the checkbox on the left to override it, then the one on the right to turn it on. The scalars and textures beside it work the same way. Nothing here is set on the master or the recipe; the master only decides which of them exist.
 
 **Presets exist to keep the permutation count down.** Every distinct combination of static switches is another shader map, multiplied by every mesh type that wears it. Parent to the preset closest to what you want rather than turning switches on from the base master, and reuse presets across assets.
 

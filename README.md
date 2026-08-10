@@ -6,6 +6,8 @@
 > <br>Surface, environment, prop master material
 > <br>Designed for lightweight Mobile Forward Rendering pathway
 
+**Suitable for realistic and stylized projects alike**
+
 UE5.8+
 
 ---
