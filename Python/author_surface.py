@@ -1662,10 +1662,22 @@ def build_all(recipe=None):
     import mob_recipe
     import importlib as _il
     _il.reload(mob_recipe)
-    mob_recipe.apply_surface(sys.modules[__name__], recipe)
+    me = sys.modules[__name__]
+    recipe = mob_recipe.load(recipe)
+    mob_recipe.apply_surface(me, recipe)
 
     ensure_weather_parameters()
     build_functions()
+
+    # Siblings first, so the module is left describing the recipe that was asked for.
+    for other in (mob_recipe.siblings(recipe, mob_recipe.SURFACE) if recipe else []):
+        _log('rebuilding %s, which shares these functions' % other.get_name())
+        mob_recipe.apply_surface(me, other)
+        build_master_material()
+        build_material_instances()
+
+    if recipe:
+        mob_recipe.apply_surface(me, recipe)
     mat, errors = build_master_material()
     build_material_instances()
     return mat, errors

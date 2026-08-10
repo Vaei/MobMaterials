@@ -100,8 +100,13 @@ def run(recipe):
         _log('M_%s not generated yet' % name)
         return False
 
-    _log('checking M_%s (%s)' % (name, kind))
+    foliage = bool(recipe.get_editor_property('foliage')) if kind == mob_recipe.SURFACE else False
+    _log('checking M_%s (%s)' % (name, 'foliage' if foliage else kind))
     r = _Result()
+
+    # A master goes stale when a function it calls is rebuilt without it, and the errors land
+    # nowhere near the function - so compiling is asserted before anything is measured.
+    r.check('master compiles', len(MEL.recompile_material(mat)) == 0)
 
     # The AO pin has to stay free, or cavity doubles with the renderer's own occlusion. This is
     # the one claim that is about what the material does NOT do, and so the easiest to lose.
@@ -109,11 +114,40 @@ def run(recipe):
         if hasattr(MEL, 'get_material_property_input_node') else None
     r.check('ambient occlusion pin left unwritten', ao is None, 'cavity multiplies instead')
 
+    if kind == mob_recipe.LANDSCAPE:
+        switches = _switch_names(mat)
+        layers = sorted({n.rsplit('_', 1)[0] for n in switches if n.endswith('_HexTiling')})
+        base = _probe(mat, 'L_off', set())
+        r.check('sampler budget never approached', base['samplers'] <= 8,
+                'all tiling off uses %s' % base['samplers'])
+
+        if layers:
+            first = layers[0]
+            dual = _probe(mat, 'L_dual', {first + '_DualScale'})
+            hexed = _probe(mat, 'L_hex', {first + '_HexTiling'})
+
+            # Both tiers are extra taps on textures already bound, so neither may cost a sampler.
+            r.check('dual scale costs taps, not samplers',
+                    dual['tex'] > base['tex'] and dual['samplers'] == base['samplers'],
+                    'tex %s -> %s' % (base['tex'], dual['tex']))
+            r.check('hex tiling costs more than dual scale',
+                    hexed['tex'] > dual['tex'] and hexed['samplers'] == base['samplers'],
+                    'tex %s -> %s' % (dual['tex'], hexed['tex']))
+
+            # Hex wins over dual where both are on, or a layer with both set would pay twice.
+            both = _probe(mat, 'L_both', {first + '_DualScale', first + '_HexTiling'})
+            r.check('hex tiling wins over dual scale', both['tex'] == hexed['tex'],
+                    'tex=%s' % both['tex'])
+
     if kind == mob_recipe.SURFACE:
         switches = set(_switch_names(mat))
         baseline = None
 
         for claim, on, expect in SURFACE_EXPECT:
+            if foliage:
+                # A foliage master carries an opacity mask and no tiling break, so the surface tap
+                # baselines do not describe it. Samplers still have to hold.
+                expect = {'samplers': expect['samplers']} if 'samplers' in expect else {}
             missing = [s for s in on if s not in switches]
             if missing:
                 _log('  skip  %s - not in this master' % claim)
@@ -146,6 +180,14 @@ def run(recipe):
                         e.get_editor_property('primitive_data_index')
         if found:
             r.check('primitive data indices unchanged', found == want, str(found))
+
+        if foliage:
+            r.check('wind is on the foliage master', 'bWind' in switches)
+            # An enum stringifies as "<BlendMode.BLEND_MASKED: 1>", so match on the name appearing.
+            r.check('foliage is masked and two sided',
+                    bool(mat.get_editor_property('two_sided'))
+                    and 'MASKED' in str(mat.get_editor_property('blend_mode')).upper(),
+                    str(mat.get_editor_property('shading_model')))
 
     _log('%d passed, %d failed' % (r.passed, len(r.failed)))
     for f in r.failed:

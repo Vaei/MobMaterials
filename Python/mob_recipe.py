@@ -34,6 +34,26 @@ def kind(recipe):
     return SURFACE if 'SURFACE' in str(recipe.get_editor_property('kind')).upper() else LANDSCAPE
 
 
+def siblings(recipe, want_kind):
+    """Other recipes of the same kind writing to the same folder, and so sharing its functions.
+
+    Rebuilding a material function leaves every master already calling it holding stale input
+    bindings - the errors read as "Missing B input" on a switch nowhere near the function - so a
+    master that shares functions with the one being authored has to be rebuilt in the same pass.
+    """
+    registry = unreal.AssetRegistryHelpers.get_asset_registry()
+    root = _dir(recipe, 'output_path')
+    found = []
+    for asset in registry.get_assets_by_class(
+            unreal.TopLevelAssetPath('/Script/MobMasterMaterial', 'MobMaterialRecipe'), False):
+        other = unreal.load_asset(str(asset.package_name))
+        if other is None or other == recipe:
+            continue
+        if kind(other) == want_kind and _dir(other, 'output_path') == root:
+            found.append(other)
+    return found
+
+
 def _dir(recipe, name, default=''):
     try:
         path = recipe.get_editor_property(name)
