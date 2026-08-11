@@ -2,8 +2,12 @@
 
 #include "MobMasterMaterialEditor.h"
 
+#include "MobChannelRemapWindow.h"
+#include "MobLevelTools.h"
 #include "MobMasterMaterialEditorStyle.h"
+#include "MobSimplifyWindow.h"
 #include "MobMasterMaterialEditorUserSettings.h"
+#include "MobUVScaleWindow.h"
 #include "SMobGenerateWindow.h"
 
 #include "ISettingsModule.h"
@@ -219,6 +223,71 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 			FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::ReportAll)));
 		Menu.EndSection();
 	}
+
+	Menu.BeginSection(TEXT("MobTextures"), LOCTEXT("TexturesSection", "Textures"));
+	Menu.AddMenuEntry(
+		LOCTEXT("FitUVScale", "Fit UV Scale To Landscape..."),
+		LOCTEXT("FitUVScaleTip",
+			"Works out every layer's UVScale from the landscape's own quad size, so a tile measures what "
+			"you asked for on the ground. A landscape that has been resized no longer has the quads the "
+			"defaults assume, and every layer then tiles wrongly at once."),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.Landscape")),
+		FUIAction(FExecuteAction::CreateStatic(&FMobUVScaleWindow::Open)));
+
+	Menu.AddMenuEntry(
+		LOCTEXT("Simplify", "Simplify Material To Layer..."),
+		LOCTEXT("SimplifyTip",
+			"Turns a landscape material down to one layer so what is on screen is that layer's art and "
+			"nothing else - no other layers, no tiling break, no slope rock, moss or wetness. Everything "
+			"it changes is recorded, and Restore in the same window puts it all back."),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Filter")),
+		FUIAction(FExecuteAction::CreateStatic(&FMobSimplifyWindow::Open)));
+
+	Menu.AddMenuEntry(
+		LOCTEXT("RemapChannels", "Remap Texture Channels..."),
+		LOCTEXT("RemapChannelsTip",
+			"Repacks incoming art into the HRC a landscape layer reads or the CRM a surface reads. "
+			"Common layouts are presets; anything else is three slots you set yourself."),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.Texture2D")),
+		FUIAction(FExecuteAction::CreateStatic(&FMobChannelRemapWindow::Open)));
+	Menu.EndSection();
+
+	// Greyed out entries say why in their own tooltip: a disabled entry with the same text as an
+	// enabled one only tells you it is disabled, which is the part already visible.
+	auto Reason = [](const FText& Tip, FText (*Why)()) -> TAttribute<FText>
+	{
+		return TAttribute<FText>::CreateLambda([Tip, Why]
+		{
+			const FText Blocked = Why();
+			return Blocked.IsEmpty() ? Tip
+				: FText::Format(LOCTEXT("LevelToolBlocked", "{0}\n\n{1}"), Tip, Blocked);
+		});
+	};
+
+	Menu.BeginSection(TEXT("MobLevel"), LOCTEXT("LevelSection", "Level"));
+	Menu.AddMenuEntry(
+		LOCTEXT("SnapToLandscape", "Snap Selected Actor To Landscape Centre"),
+		Reason(LOCTEXT("SnapToLandscapeTip",
+			"Moves the selection to the middle of the nearest landscape and sits it on the surface, "
+			"which is where a test mesh wants to be and is otherwise three numbers to work out by hand."),
+			&FMobLevelTools::SnapReason),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Transform")),
+		FUIAction(
+			FExecuteAction::CreateStatic(&FMobLevelTools::SnapToLandscapeCentre),
+			FCanExecuteAction::CreateStatic(&FMobLevelTools::CanSnapToLandscapeCentre)));
+
+	Menu.AddMenuEntry(
+		LOCTEXT("FitBoxToLandscape", "Fit Selected Box Volume To Landscape"),
+		Reason(LOCTEXT("FitBoxToLandscapeTip",
+			"Centres and scales the selected volume so it covers the nearest landscape exactly, "
+			"proxies included. Its rotation is cleared: a turned box cannot be scaled to cover an "
+			"axis aligned one."),
+			&FMobLevelTools::FitReason),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.Volume")),
+		FUIAction(
+			FExecuteAction::CreateStatic(&FMobLevelTools::FitBoxToLandscape),
+			FCanExecuteAction::CreateStatic(&FMobLevelTools::CanFitBoxToLandscape)));
+	Menu.EndSection();
 
 	Menu.BeginSection(TEXT("MobSettings"), LOCTEXT("SettingsSection", "Settings"));
 	Menu.AddMenuEntry(

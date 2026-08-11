@@ -156,6 +156,11 @@ Every recipe in the project also appears directly on the **Mob** menu, so regene
 | **Verify Contract** | asserts what each master claims to cost - taps and samplers per feature, the ambient occlusion pin left free, primitive data indices unmoved. Results in the Output Log |
 | **Report Cost** | how many distinct shader maps the instances add up to, and how much texture each master keeps resident |
 | **Pack Layers for \<Recipe\>** | packs a landscape recipe's layer textures into the arrays its master samples. Only listed for recipes using them |
+| **Simplify Material To Layer...** | turns a landscape material down to one layer so what is on screen is that layer's art and nothing else. Everything it changes is recorded, and Restore in the same window puts it back exactly. For working through layers one at a time before the whole set exists |
+| **Fit UV Scale To Landscape...** | reads the landscape's own quad size and writes every layer's `UVScale` so a tile measures the metres you asked for. A resized landscape does not have the quads the defaults assume, and then every layer tiles wrongly at once |
+| **Remap Texture Channels...** | repacks incoming art into the HRC a landscape layer reads or the CRM a surface reads. Common layouts are presets; anything else is three slots you set yourself |
+| **Snap Selected Actor To Landscape Centre** | drops the selection in the middle of the nearest landscape, sitting on the surface. Where a test mesh wants to be, and otherwise three numbers to work out by hand |
+| **Fit Selected Box Volume To Landscape** | centres and scales the selected volume to cover the nearest landscape exactly, streaming proxies included. Clears its rotation, since a turned box cannot be scaled to cover an axis aligned one |
 | **Open MPC_MobWeather** | straight to the wetness dial |
 | **Editor Preferences** | per-developer settings, not checked in |
 | **Hide This Menu** | takes the Mob button off your toolbar. Turn it back on under Editor Preferences, Plugins, Mob Master Material Editor |
@@ -294,3 +299,5 @@ Every distinct set of static switches is a distinct shader map, and PSOs are per
 * Debug views on both masters, sent to emissive with base colour blacked out
 * Recipe assets drive generation, so a project carries as many masters as it needs
 * Mob toolbar menu: generate, pack layer arrays, test level, contract verification, cost reporting, weather collection, and a per-developer hide
+* Fit UV Scale To Landscape: every layer's tile size worked out from the landscape's own quad size
+* Remap Texture Channels: repacks ORM, MRAO, RMA or separate maps into HRC or CRM, with a custom slot per output channel

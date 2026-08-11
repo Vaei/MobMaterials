@@ -37,6 +37,8 @@ Three samplers per layer.
 
 There is no ambient occlusion channel, on purpose. The renderer supplies its own occlusion and a baked AO map on top of it darkens twice. Cavity takes that slot instead, and it does double duty as the height field for layer blending, so height blending needs no fourth texture.
 
+Art almost never arrives packed as CRM. **Mob → Remap Texture Channels...** repacks it: choose how the incoming maps are laid out - packed ORM, MRAO, RMA, or a texture each - and it fills the three output slots, which stay editable for anything it does not recognise. No preset wires ambient occlusion anywhere, for the reason above.
+
 Every texture parameter defaults to a 4x4 neutral in `Textures/`. That matters more than it sounds: a parameter left at its default still holds a reference and still loads, even when its sample has been compiled out of a dead branch. Defaulting to a 4x4 makes an unused slot free.
 
 ## Layers
@@ -219,16 +221,18 @@ The opacity mask is read from **alpha**, which skips the sRGB decode, so the thr
 
 ## Debug views
 
-`bDebug`, then `DebugMode`:
+`bDebug`, then `DebugMode`, which is a named list on the instance rather than an index:
 
 | | |
 |---|---|
-| 1 | layer weights, one per channel. Red is layer 0, green layer 1, blue layer 2 |
-| 2 | cavity |
-| 3 | blended normal |
-| 4 | wetness mask |
-| 5 | blended height |
-| 6 | vertex colour, as painted |
+| Layer Weights | one per channel. Red is layer 0, green layer 1, blue layer 2 |
+| Cavity | blended cavity, which is also what height blending reads |
+| Normal | blended normal, in tangent space, as a normal map reads |
+| Wetness | where the surface counts as wet |
+| Height | blended height. Flat grey here means nothing to blend along |
+| Vertex Colour | as painted |
+
+`DebugExposure` scales the view before it is drawn. Several of these sit near white on their own - a height that never leaves the top of its range, a weight parked at one - and turning it down is what brings the variation in them back into a range the eye can read.
 
 The result goes to **emissive** with base colour blacked out, so what you see is the value itself rather than the value times whatever the light was doing.
 

@@ -692,8 +692,28 @@ return MobWind(WorldPos, ObjectPos, Direction, Time, Strength, Speed,
 """
 
 _CODE_DEBUG = """
-return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour);
+return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour) * max(Exposure, 0.0f);
 """
+
+DEBUG_ENUM = '/Script/MobMasterMaterial.EMobDebugView'
+
+DEBUG_MODE_DESC = (
+    'Which intermediate to draw instead of the shaded surface. Only read when Debug is on.\n\n'
+    'Layer weights are the ones worth looking at first: a weight that is wrong reads as a texture '
+    'choice in the final image, so there is nothing else to see it in.'
+)
+
+DEBUG_SWITCH_DESC = (
+    'Draws Debug Mode to emissive with the base colour blacked out, so what is on screen is the '
+    'value rather than the value times whatever the light was doing. Off costs nothing: the whole '
+    'debug branch is compiled out.'
+)
+
+DEBUG_EXPOSURE_DESC = (
+    'Scales the debug view before it is drawn. Several of these are near white on their own - a '
+    'height that never leaves the top of its range, a weight sitting at one - and turning this '
+    'down is what brings the variation in them back into a range the eye can read.'
+)
 
 _CODE_PRIMITIVE = """
 float3 Col = BaseColor * lerp(1.0f.xxx, Tint, saturate(TintAmount));
@@ -1042,13 +1062,36 @@ def ensure_weather_parameters():
 # Master material
 # ---------------------------------------------------------------------------
 
-def _param_scalar(mat, name, default, group, x, y, sort=0):
+def _param_scalar(mat, name, default, group, x, y, sort=0, desc=None, enum=None):
     e = _expr(mat, unreal.MaterialExpressionScalarParameter, x, y)
     e.set_editor_property('parameter_name', name)
     e.set_editor_property('default_value', float(default))
     e.set_editor_property('group', group)
     e.set_editor_property('sort_priority', sort)
+    if desc:
+        e.set_editor_property('desc', desc)
+    if enum:
+        _set_enum_control(e, enum)
     return e
+
+
+def _set_enum_control(param, enum_path):
+    """Draws a scalar as a named combo box in the instance editor rather than asking for an index.
+
+    Falls back to leaving it numeric rather than failing the build: the enum lives in a C++ module,
+    and a project whose binaries are behind the scripts should still get a material.
+    """
+    obj = unreal.load_object(None, enum_path)
+    if obj is None:
+        unreal.log_warning('MobMasterMaterial: %s did not resolve, leaving the scalar numeric.'
+                           % enum_path)
+        return
+    try:
+        param.set_editor_property('control_type',
+                                  unreal.MaterialScalarParameterControlType.ENUMERATION)
+        param.set_editor_property('enumeration', obj)
+    except Exception as err:
+        unreal.log_warning('MobMasterMaterial: enum control unavailable (%s).' % err)
 
 
 def _param_vector(mat, name, rgb, group, x, y, sort=0):
@@ -1084,12 +1127,15 @@ def _fn_call(mat, function_path, x, y):
     return e
 
 
-def _switch_param(mat, name, true_src, true_out, false_src, false_out, group, x, y, default=False):
+def _switch_param(mat, name, true_src, true_out, false_src, false_out, group, x, y, default=False,
+                  desc=None):
     """A StaticSwitchParameter. Several may share a name; they all follow one toggle on the instance."""
     sw = _expr(mat, unreal.MaterialExpressionStaticSwitchParameter, x, y)
     sw.set_editor_property('parameter_name', name)
     sw.set_editor_property('default_value', bool(default))
     sw.set_editor_property('group', group)
+    if desc:
+        sw.set_editor_property('desc', desc)
     link(true_src, true_out, sw, 'True')
     link(false_src, false_out, sw, 'False')
     return sw
@@ -1543,9 +1589,13 @@ def build_master_material():
 
     if INCLUDE_DEBUG:
         dbg = custom(mat, _CODE_DEBUG, CMOT.CMOT_FLOAT3,
-                     ['Mode', 'Weights', 'Cavity', 'Normal', 'Wetness', 'Height', 'VertexColour'],
+                     ['Mode', 'Weights', 'Cavity', 'Normal', 'Wetness', 'Height', 'VertexColour',
+                      'Exposure'],
                      [], 300, 800, 'Debug view')
-        link(_param_scalar(mat, 'DebugMode', 1.0, GROUP_DEBUG, 0, 800, 1), '', dbg, 'Mode')
+        link(_param_scalar(mat, 'DebugMode', 1.0, GROUP_DEBUG, 0, 800, 1,
+                           desc=DEBUG_MODE_DESC, enum=DEBUG_ENUM), '', dbg, 'Mode')
+        link(_param_scalar(mat, 'DebugExposure', 1.0, GROUP_DEBUG, 0, 850, 2,
+                           desc=DEBUG_EXPOSURE_DESC), '', dbg, 'Exposure')
         link(blend, 'Weights', dbg, 'Weights')
         link(blend, 'Cavity', dbg, 'Cavity')
         link(blend, 'Normal', dbg, 'Normal')
@@ -1558,10 +1608,11 @@ def build_master_material():
 
         # Sent to emissive and the base colour blacked out, so what you see is the value itself
         # rather than the value times whatever the light happened to be doing.
-        base_src = _switch_param(mat, 'bDebug', black, '', final, 'BaseColor', GROUP_DEBUG, 500, 900)
+        base_src = _switch_param(mat, 'bDebug', black, '', final, 'BaseColor', GROUP_DEBUG, 500, 900,
+                                 desc=DEBUG_SWITCH_DESC)
         base_out = ''
         emissive_src = _switch_param(mat, 'bDebug', dbg, '', emissive, 'Emissive', GROUP_DEBUG,
-                                     500, 800)
+                                     500, 800, desc=DEBUG_SWITCH_DESC)
         emissive_out = ''
 
     # --- outputs ----------------------------------------------------------

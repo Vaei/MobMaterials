@@ -158,13 +158,31 @@ float4 MobHexCombine(float4 A, float4 B, float4 C, float3 W)
 }
 
 /**
- * Two taps at incommensurate scales combined as an overlay rather than a lerp. A lerp of two
- * scales just halves the contrast and reads as blur; overlay keeps the detail and only disturbs
- * the low frequency that made the repeat visible.
+ * Two taps at incommensurate scales, the second modulating the first about its own mean rather
+ * than multiplying into it. A lerp of two scales just halves the contrast and reads as blur; a
+ * plain multiply darkens, and darkens each channel by its own value, so a dark or saturated
+ * texture comes out muddy and hue shifted. Modulating about the mean brightens where the second
+ * tap is above its average and darkens where it is below, leaving the average where it was.
+ *
+ * Mean is the texture's own average, which the shader cannot know, so it is a per layer parameter.
+ * A wrong Mean shows as an overall lift or crush rather than as a wrong pattern.
+ */
+float4 MobDualCombine(float4 Base, float4 Second, float4 Mean, float Amount)
+{
+	float4 Safe = max(Mean, 1e-3f);
+	float4 Modulation = 1.0f + (Second - Safe) / Safe * saturate(Amount);
+	return float4(max(Base.rgb * Modulation.rgb, 0.0f), Base.a);
+}
+
+/**
+ * A material function authored before this took a mean still calls it with three arguments, and a
+ * shader library is compiled against whatever is already in the asset. A mean of a half reduces to
+ * the plain multiply that form always did, so an ungenerated material keeps working and looking
+ * exactly as it did rather than failing to compile.
  */
 float4 MobDualCombine(float4 Base, float4 Second, float Amount)
 {
-	return lerp(Base, saturate(Base * Second * 2.0f), saturate(Amount));
+	return MobDualCombine(Base, Second, 0.5f, Amount);
 }
 
 // ---------------------------------------------------------------------------

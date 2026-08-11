@@ -68,7 +68,7 @@ This is the difference between wetness that reads as weather and wetness that re
 The two sets scroll at different rates and directions, so their interference never repeats on a period anyone can see. They only appear where `Puddle` is non-zero, so dry ground stays still and you can leave this on.
 
 > [!IMPORTANT]
-> Ripples do nothing without puddles. If `PuddleDepth` is low or the surface is not facing up, there is no puddle mask to gate them and nothing will move. Check the puddle mask first - **debug view 4** shows the wetness mask.
+> Ripples do nothing without puddles. If `PuddleDepth` is low or the surface is not facing up, there is no puddle mask to gate them and nothing will move. Check the puddle mask first - the **Wetness** debug view shows it.
 
 ## Snow
 

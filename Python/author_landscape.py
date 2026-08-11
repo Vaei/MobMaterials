@@ -280,7 +280,7 @@ return A;
 """
 
 _CODE_COMBINE_DUAL = """
-return MobDualCombine(Base, Second, Amount);
+return MobDualCombine(Base, Second, float4(Mean, 1.0f), Amount);
 """
 
 _CODE_SHADE = """
@@ -477,11 +477,20 @@ def build_layer_function():
             link(half, '', hex_combine, 'Mean')
 
         dual_combine = custom(fn, _CODE_COMBINE_DUAL, CMOT.CMOT_FLOAT4,
-                              ['Base', 'Second', 'Amount'], [], -400, y_comb + 200,
+                              ['Base', 'Second', 'Mean', 'Amount'], [], -400, y_comb + 200,
                               'Dual scale overlay')
         link(taps[tex_name + 'Base'], 'RGBA', dual_combine, 'Base')
         link(taps[tex_name + 'Dual'], 'RGBA', dual_combine, 'Second')
         link(ins['Amount'], '', dual_combine, 'Amount')
+
+        # Modulating about the mean needs the texture's own average. A normal or a mask pack sits
+        # around a half by construction, so only the base colour has one worth naming.
+        if tex_name == 'BC':
+            link(ins['MeanColor'], '', dual_combine, 'Mean')
+        else:
+            dual_half = _fnexpr(fn, unreal.MaterialExpressionConstant3Vector, -600, y_comb + 260)
+            dual_half.set_editor_property('constant', unreal.LinearColor(0.5, 0.5, 0.5, 1.0))
+            link(dual_half, '', dual_combine, 'Mean')
 
         cheap = _fnexpr(fn, unreal.MaterialExpressionStaticSwitch, -200, y_comb + 100)
         link(dual_combine, '', cheap, 'True')
@@ -984,13 +993,36 @@ def build_rvt_assets(tile_count=4, tile_size=2, tile_border=2):
 # Master material
 # ---------------------------------------------------------------------------
 
-def _param_scalar(mat, name, default, group, x, y, sort=0):
+def _param_scalar(mat, name, default, group, x, y, sort=0, desc=None, enum=None):
     e = _expr(mat, unreal.MaterialExpressionScalarParameter, x, y)
     e.set_editor_property('parameter_name', name)
     e.set_editor_property('default_value', float(default))
     e.set_editor_property('group', group)
     e.set_editor_property('sort_priority', sort)
+    if desc:
+        e.set_editor_property('desc', desc)
+    if enum:
+        _set_enum_control(e, enum)
     return e
+
+
+def _set_enum_control(param, enum_path):
+    """Draws a scalar as a named combo box in the instance editor rather than asking for an index.
+
+    Falls back to leaving it numeric rather than failing the build: the enum lives in a C++ module,
+    and a project whose binaries are behind the scripts should still get a material.
+    """
+    obj = unreal.load_object(None, enum_path)
+    if obj is None:
+        unreal.log_warning('MobMasterMaterial: %s did not resolve, leaving the scalar numeric.'
+                           % enum_path)
+        return
+    try:
+        param.set_editor_property('control_type',
+                                  unreal.MaterialScalarParameterControlType.ENUMERATION)
+        param.set_editor_property('enumeration', obj)
+    except Exception as err:
+        unreal.log_warning('MobMasterMaterial: enum control unavailable (%s).' % err)
 
 
 def _param_vector(mat, name, rgb, group, x, y, sort=0):
@@ -1105,8 +1137,27 @@ return max(Base, 1.0f - saturate(Painted));
 
 
 _CODE_DEBUG = """
-return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour);
+return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour) * max(Exposure, 0.0f);
 """
+
+DEBUG_ENUM = '/Script/MobMasterMaterial.EMobDebugView'
+
+DEBUG_MODE_DESC = (
+    'Which intermediate to draw instead of the terrain. Only read when Debug is on.\n\n'
+    'Layer weights are the ones worth looking at first: a weight that is wrong reads as a texture '
+    'choice in the final image, so there is nothing else to see it in.'
+)
+
+DEBUG_SWITCH_DESC = (
+    'Draws Debug Mode over the terrain instead of shading it. Off costs nothing: the whole debug '
+    'branch is compiled out.'
+)
+
+DEBUG_EXPOSURE_DESC = (
+    'Scales the debug view before it is drawn. Several of these are near white on their own - a '
+    'height that never leaves the top of its range, a weight sitting at one - and turning this '
+    'down is what brings the variation in them back into a range the eye can read.'
+)
 
 _CODE_GLOBAL_GRADE = """
 float3 Col = MobApplyHSV(BaseColor, GlobalHue, GlobalSaturation, GlobalValue) * GlobalTint;
@@ -1152,9 +1203,13 @@ def _landscape_debug(mat, blocks, acc, colour_src, normal_src, wet):
     vcol = _expr(mat, unreal.MaterialExpressionVertexColor, 1400, 1500)
 
     dbg = custom(mat, _CODE_DEBUG, CMOT.CMOT_FLOAT3,
-                 ['Mode', 'Weights', 'Cavity', 'Normal', 'Wetness', 'Height', 'VertexColour'],
+                 ['Mode', 'Weights', 'Cavity', 'Normal', 'Wetness', 'Height', 'VertexColour',
+                  'Exposure'],
                  [], 1700, 1300, 'Debug view')
-    link(_param_scalar(mat, 'DebugMode', 1.0, 'Debug', 1400, 1200, 1), '', dbg, 'Mode')
+    link(_param_scalar(mat, 'DebugMode', 1.0, 'Debug', 1400, 1200, 1,
+                       desc=DEBUG_MODE_DESC, enum=DEBUG_ENUM), '', dbg, 'Mode')
+    link(_param_scalar(mat, 'DebugExposure', 1.0, 'Debug', 1400, 1250, 2,
+                       desc=DEBUG_EXPOSURE_DESC), '', dbg, 'Exposure')
     link(rgb, '', dbg, 'Weights')
     link(acc['Cavity'][0], acc['Cavity'][1], dbg, 'Cavity')
     link(acc['Normal'][0], acc['Normal'][1], dbg, 'Normal')
@@ -1173,12 +1228,14 @@ def _landscape_debug(mat, blocks, acc, colour_src, normal_src, wet):
     sw_c = _expr(mat, unreal.MaterialExpressionStaticSwitchParameter, 1900, 1300)
     sw_c.set_editor_property('parameter_name', 'bDebug')
     sw_c.set_editor_property('group', 'Debug')
+    sw_c.set_editor_property('desc', DEBUG_SWITCH_DESC)
     link(dbg, '', sw_c, 'True')
     link(colour_src, '', sw_c, 'False')
 
     sw_n = _expr(mat, unreal.MaterialExpressionStaticSwitchParameter, 1900, 1450)
     sw_n.set_editor_property('parameter_name', 'bDebug')
     sw_n.set_editor_property('group', 'Debug')
+    sw_n.set_editor_property('desc', DEBUG_SWITCH_DESC)
     link(flat, '', sw_n, 'True')
     link(normal_src, '', sw_n, 'False')
 

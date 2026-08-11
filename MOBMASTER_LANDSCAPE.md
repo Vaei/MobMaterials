@@ -5,6 +5,8 @@ Setup and troubleshooting are in [`README.md`](README.md). The surface master is
 | System | |
 |---|---|
 | [Texture packs](#texture-packs) | two textures per layer |
+| [Working on one layer](#working-on-one-layer) | turn everything else off, and put it back |
+| [Tile size](#tile-size) | UVScale is per quad, not per metre |
 | [Paint layers](#paint-layers) | how many, and what the base layer is for |
 | [Blending](#blending) | height interlock rather than cross-fade |
 | [Tiling break](#tiling-break) | four tiers, from free to stochastic |
@@ -13,6 +15,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The surface master is
 | [Moss](#moss) | cavity, shade and slope decide where it grows |
 | [Wetness](#wetness) | damp, then standing water |
 | [Global grade](#global-grade) | one place to shift the whole terrain |
+| [Debug views](#debug-views) | seeing the blend instead of guessing at it |
 | [Runtime virtual texture](#runtime-virtual-texture) | caching the blend, and blending meshes into it |
 | [Project integration](#project-integration) | RVT, footstep surfaces, grass |
 
@@ -33,6 +36,26 @@ Height drives the blend, so the interlock costs no extra texture.
 There is no ambient occlusion channel, on purpose. The renderer supplies its own occlusion and a baked AO map on top of it darkens twice, so the third channel carries cavity instead: it multiplies base colour and specular through the global grade and never reaches the AO pin, which stays at 1.
 
 Height and cavity are not the same signal. Height is macro - which layer wins where the two interlock. Cavity is micro - the crevice between two stones, which shades but never decides a blend.
+
+Art rarely arrives packed this way. **Mob → Remap Texture Channels...** repacks it: pick how the incoming maps are laid out - packed ORM, MRAO, RMA, or a texture each - and it fills the three output slots, which stay editable for a layout it does not know. The result is written linear as Masks and overwrites an existing asset of the same name in place, so a repack keeps every material already pointing at it. Note that no preset ever wires ambient occlusion into anything, for the reason above; point it at a slot yourself if that is genuinely what you want.
+
+## Working on one layer
+
+The master is built to have everything on at once, which is the wrong thing to be looking at while a single layer's art is being authored. Slope rock, moss, wetness, the tiling break and the other layers all move together, and a mistake in any of them looks like a mistake in the texture.
+
+**Mob → Simplify Material To Layer...** turns it down to one. It sets the chosen layer's weight to full and every other layer's to nothing, zeroes the slope and altitude masks, and optionally turns off the tiling break, zeroes slope rock, moss and wetness, and neutralises the per-layer grade. **Show Everywhere** additionally points every other layer's textures and tiling at the chosen one's, so unpainted ground shows it too - which is what you want when only one layer's art exists and the base layer is still a placeholder.
+
+Everything it touches is recorded first, keyed by the instance's path, and **Restore** in the same window puts back exactly what was there rather than the master's defaults. A layer that had already been tuned does not lose that tuning to a debugging aid. The record is per developer and is not checked in.
+
+Turning the tiling break off and on again is a static switch, so both directions recompile that instance's permutations.
+
+## Tile size
+
+`<Layer>_UVScale` is **tiles per landscape quad**, not per metre. A quad is one unit of the landscape actor's own scale, so what a tile measures on the ground depends on that scale, and a landscape that has been resampled or resized does not have the 100 unit quads the defaults assume. Every layer then tiles at the wrong size at once, which reads as a blurred or moire mess rather than as a wrong number - the texture is minified past its top mips and no detail survives at any distance.
+
+**Mob → Fit UV Scale To Landscape...** does the arithmetic. It takes the landscape selected in the level (or the only one in it) and the material instance selected in the Content Browser (or whatever the landscape is rendering with), asks how many metres a tile should span, and writes every layer. Layers wanting a tighter repeat than the rest go in **Per Layer Tile Size**.
+
+The sum, if you would rather do it by hand: `UVScale = QuadCm / (TileMetres * 100)`. A landscape scaled 15.87 with a 4 m tile wants `0.0397`.
 
 ## Paint layers
 
@@ -131,6 +154,25 @@ The mask feeds the physical material output, so wet dirt reads as mud underfoot.
 ## Global grade
 
 One Custom node at the end of the chain: `GlobalHue`, `GlobalSaturation`, `GlobalValue`, `GlobalTint`, `GlobalNormalFlatten`, `GlobalRoughnessMin`, plus a distance desaturation and a distance colour for aerial perspective.
+
+## Debug views
+
+`bDebug`, then `DebugMode`, which is a named list on the instance rather than an index:
+
+| | |
+|---|---|
+| Layer Weights | the first three paint layers as red, green and blue |
+| Cavity | blended cavity, which is also what height blending reads |
+| Normal | blended normal, in tangent space |
+| Wetness | where the terrain counts as wet |
+| Height | blended height. Flat grey here means nothing to blend along |
+| Vertex Colour | as painted |
+
+`DebugExposure` scales the view before it is drawn. Height and weights both spend most of their time near the top of their range, and turning this down is what brings the variation that matters back into a range the eye can read.
+
+Weights are the first three layers rather than all of them, because a landscape blend is a chain of pairs and there is no single place holding more than that. Three is enough to read: it is the transitions between neighbouring layers that go wrong, not layer nine on its own.
+
+Terrain has no emissive to borrow, so the view goes to base colour with the normal flattened - an unlit read is the point, and a flat normal is the closest this gets to one.
 
 ## Runtime virtual texture
 

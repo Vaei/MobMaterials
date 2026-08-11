@@ -228,18 +228,20 @@ Generating also authors `MF_<Name>RVTBlend`, which fades a mesh into the terrain
 
 The single biggest time saver here, and it costs nothing until asked.
 
-`bDebug` on the instance, then `DebugMode`:
+`bDebug` on the instance, then `DebugMode` - a named list, not an index to remember:
 
 | | |
 |---|---|
-| 1 | layer weights - red is layer 0, green layer 1, blue layer 2 |
-| 2 | cavity |
-| 3 | blended normal |
-| 4 | wetness mask |
-| 5 | blended height |
-| 6 | vertex colour, as painted |
+| Layer Weights | red is layer 0, green layer 1, blue layer 2 |
+| Cavity | |
+| Normal | blended, in tangent space |
+| Wetness | the wetness mask |
+| Height | blended height |
+| Vertex Colour | as painted |
 
 The result goes to emissive with base colour blacked out, so you see the value itself rather than the value times whatever the light was doing.
+
+If a view reads as flat white, turn `DebugExposure` down. Height and weights both spend most of their time at the top of their range, and the variation that matters is in the last fraction.
 
 **Layer weights is the one to reach for.** A wrong weight is invisible in the final image precisely when it matters, because it looks like a texture choice rather than a mistake - and no other view can reconstruct it.
 
@@ -265,7 +267,7 @@ Two things on the Mob menu, both of which answer questions that otherwise surfac
 | **Turned a switch on and nothing happened** | the recipe option is off, so the feature is not in the master. Turn it on, regenerate |
 | **Everything is soaking wet and the top layer** | vertex colour convention. Black adds, white is neutral - an unpainted mesh should read as the base layer. If it does not, something has filled the mesh with black |
 | **A feature is on and nothing changed** | its texture is still the flat placeholder. See [Art you have to supply](#art-you-have-to-supply) |
-| **Ripples do nothing** | they are gated by the puddle mask. Check debug view 4 first: no puddle, no ripple. Raise `PuddleDepth` or check the surface is facing up |
+| **Ripples do nothing** | they are gated by the puddle mask. Check the **Wetness** debug view first: no puddle, no ripple. Raise `PuddleDepth` or check the surface is facing up |
 | **Wetness reads as a darker texture** | `RoughnessTarget` is not low enough. Wet is mostly a roughness change |
 | **Tiling break made it blurry** | `TileBreakScale` too close to a simple fraction, or `TileBreakAmount` too high. Try 0.37 |
 | **Parallax swims** | `ParallaxAmount` too high. 0.02 to 0.06 |

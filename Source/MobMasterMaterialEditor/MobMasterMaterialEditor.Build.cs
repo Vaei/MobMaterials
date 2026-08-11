@@ -30,6 +30,13 @@ public class MobMasterMaterialEditor : ModuleRules
 				"Settings",
 				"PythonScriptPlugin",
 				"MobMasterMaterial",
+				"PropertyEditor",
+				"ContentBrowser",
+				"AssetRegistry",
+				"ImageCore",
+				"Landscape",
+				"MaterialEditor",
+				"Json",
 			}
 			);
 	}
