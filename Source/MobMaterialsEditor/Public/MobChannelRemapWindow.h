@@ -80,7 +80,7 @@ struct FMobChannelSource
 
 /** What Remap Texture Channels is set to. Config, so it opens where it was left. */
 UCLASS(Config=EditorPerProjectUserSettings)
-class MOBMASTERMATERIALEDITOR_API UMobChannelRemapOptions : public UObject
+class MOBMATERIALSEDITOR_API UMobChannelRemapOptions : public UObject
 {
 	GENERATED_BODY()
 

@@ -1,6 +1,6 @@
 # Surface Reference
 
-Setup and troubleshooting are in [`README.md`](README.md). The landscape master is in [`MOBMASTER_LANDSCAPE.md`](MOBMASTER_LANDSCAPE.md).
+Setup and troubleshooting are in [`README.md`](README.md). The landscape master is in [`MOBMATERIALS_LANDSCAPE.md`](MOBMATERIALS_LANDSCAPE.md).
 
 | System | |
 |---|---|
@@ -144,7 +144,7 @@ Standing water is a harder threshold than the damp darkening around it: `PuddleD
 | `Accumulation_CavityBias` | how much it favours crevices, which is where a thin covering starts and the last of it survives |
 | `Accumulation_NoiseAmount` | breaks the line between covered and bare so it does not read as a threshold |
 
-No extra samples: it reuses the cavity the layers already blended and the surface normal the material already has. Snow, dust and ash are the same system with different numbers - see [`MOBMASTER_WEATHER.md`](./MOBMASTER_WEATHER.md) for values.
+No extra samples: it reuses the cavity the layers already blended and the surface normal the material already has. Snow, dust and ash are the same system with different numbers - see [`MOBMATERIALS_WEATHER.md`](./MOBMATERIALS_WEATHER.md) for values.
 
 It runs **after** wetness, so a covering sits on top of a wet surface rather than being darkened by it. That is the right order: snow that has just landed is not wet yet.
 

@@ -45,7 +45,7 @@ def siblings(recipe, want_kind):
     root = _dir(recipe, 'output_path')
     found = []
     for asset in registry.get_assets_by_class(
-            unreal.TopLevelAssetPath('/Script/MobMasterMaterial', 'MobMaterialRecipe'), False):
+            unreal.TopLevelAssetPath('/Script/MobMaterials', 'MobMaterialRecipe'), False):
         other = unreal.load_asset(str(asset.package_name))
         if other is None or other == recipe:
             continue

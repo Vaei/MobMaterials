@@ -49,7 +49,7 @@ struct FMobLandscapeLayer
  * result. Nothing here is read at runtime.
  */
 UCLASS(BlueprintType)
-class MOBMASTERMATERIAL_API UMobMaterialRecipe : public UDataAsset
+class MOBMATERIALS_API UMobMaterialRecipe : public UDataAsset
 {
 	GENERATED_BODY()
 
@@ -216,7 +216,7 @@ public:
 	 *
 	 * The cost is that a slice cannot differ from its neighbours: every layer's textures must
 	 * share one resolution and one format per channel, and swapping one layer's art means a
-	 * repack rather than a parameter change. Pack Layer Arrays from the Mob menu does the packing
+	 * repack rather than a parameter change. Pack Layer Arrays from the Mat menu does the packing
 	 * and says which layer failed to match.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Landscape",

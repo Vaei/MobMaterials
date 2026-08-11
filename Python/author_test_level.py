@@ -6,7 +6,7 @@ cavity there is nothing for the height blend to interlock along - so layering is
 the layers in one sphere at a time rather than by one blended sphere that would just read as a
 single flat colour.
 
-Run from the Mob toolbar menu, or:
+Run from the Mat toolbar menu, or:
 
     import author_test_level as t
     t.build('/Game/Path/MR_MySurface')
@@ -22,7 +22,7 @@ CUBE = '/Engine/BasicShapes/Cube'
 
 
 def _log(msg):
-    unreal.log('[MobMasterMaterial] ' + str(msg))
+    unreal.log('[MobMaterials] ' + str(msg))
 
 
 def _tools():
@@ -110,7 +110,7 @@ def build(recipe):
         ('Emissive', 'a masked glow. The mask defaults to black, so the demo assigns a white one',
          {'bEmissive': True}, {'EmissiveIntensity': 4.0},
          {'Layer0_Tint': STONE, 'EmissiveColor': (1.0, 0.45, 0.1)},
-         {'EmissiveMask': '/MobMasterMaterial/Textures/T_BaseWhite'}),
+         {'EmissiveMask': '/MobMaterials/Textures/T_BaseWhite'}),
     ]
 
     # Everything past the original set depends on a recipe option, so each is offered only when the

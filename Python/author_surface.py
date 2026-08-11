@@ -15,7 +15,7 @@ Every phase is idempotent: an existing asset is emptied and rebuilt in place so 
 instances keep their references.
 
 The heavy maths lives in Shaders/Public/MobSurface.ush and is reached from Custom nodes through
-the /MobMasterMaterial mapping the module registers, so the graphs here stay thin. Feature gating
+the /MobMaterials mapping the module registers, so the graphs here stay thin. Feature gating
 is done with static bools inside the functions rather than switches in the master: a discarded
 material function input is never compiled, so a layer that is switched off takes its texture
 samples and its grade with it.
@@ -28,29 +28,29 @@ import unreal
 MEL = unreal.MaterialEditingLibrary
 EAL = unreal.EditorAssetLibrary
 
-ROOT = '/MobMasterMaterial/Surface'
+ROOT = '/MobMaterials/Surface'
 
 # Base name for the authored assets: M_<MASTER_NAME>, MI_<MASTER_NAME>_<Preset>. A recipe overrides it.
 MASTER_NAME = 'MobSurface'
 FN_ROOT = ROOT + '/Functions'
 
-INCLUDES = ['/MobMasterMaterial/Public/MobSurface.ush']
+INCLUDES = ['/MobMaterials/Public/MobSurface.ush']
 
 # The pack is BaseColor + Normal + CRM (Cavity, Roughness, Metallic). Placeholders have to match
 # the sampler type they stand in for or the material will not compile.
-BASE_TEX_BC = '/MobMasterMaterial/Textures/T_BaseGrey'
-BASE_TEX_NRM = '/MobMasterMaterial/Textures/T_BaseNormal'
-BASE_TEX_CRM = '/MobMasterMaterial/Textures/T_BaseCRM'
-BASE_TEX_NOISE = '/MobMasterMaterial/Textures/T_BaseLinear'
-BASE_TEX_EMISSIVE = '/MobMasterMaterial/Textures/T_BaseBlack'
-BASE_TEX_DETAIL = '/MobMasterMaterial/Textures/T_BaseNormal'
+BASE_TEX_BC = '/MobMaterials/Textures/T_BaseGrey'
+BASE_TEX_NRM = '/MobMaterials/Textures/T_BaseNormal'
+BASE_TEX_CRM = '/MobMaterials/Textures/T_BaseCRM'
+BASE_TEX_NOISE = '/MobMaterials/Textures/T_BaseLinear'
+BASE_TEX_EMISSIVE = '/MobMaterials/Textures/T_BaseBlack'
+BASE_TEX_DETAIL = '/MobMaterials/Textures/T_BaseNormal'
 # The opacity mask is read from alpha rather than a colour channel: alpha skips the sRGB decode, so
 # the threshold an artist sets is the threshold the clip uses, and a masked prop can point this
 # straight at its own BaseColor. The placeholder compresses without alpha, which samples as 1, so an
 # instance that never assigns a mask clips nothing.
-BASE_TEX_MASK = '/MobMasterMaterial/Textures/T_BaseWhite'
+BASE_TEX_MASK = '/MobMaterials/Textures/T_BaseWhite'
 
-WEATHER_MPC = '/MobMasterMaterial/MPC_MobWeather'
+WEATHER_MPC = '/MobMaterials/MPC_MobWeather'
 WEATHER_PARAM = 'Wetness'
 
 # Set by mob_recipe so a newly created collection can be written back onto the recipe.
@@ -86,7 +86,7 @@ def _tools():
 
 
 def _log(msg):
-    unreal.log('[MobMasterMaterial] ' + str(msg))
+    unreal.log('[MobMaterials] ' + str(msg))
 
 
 def _clear_function(fn):
@@ -126,7 +126,7 @@ def get_or_create_function(name, description=''):
                                    unreal.MaterialFunctionFactoryNew())
     fn.set_editor_property('description', description)
     fn.set_editor_property('expose_to_library', True)
-    fn.set_editor_property('library_categories_text', ['MobMasterMaterial', 'Surface'])
+    fn.set_editor_property('library_categories_text', ['MobMaterials', 'Surface'])
     return fn
 
 
@@ -695,7 +695,7 @@ _CODE_DEBUG = """
 return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour) * max(Exposure, 0.0f);
 """
 
-DEBUG_ENUM = '/Script/MobMasterMaterial.EMobDebugView'
+DEBUG_ENUM = '/Script/MobMaterials.EMobDebugView'
 
 DEBUG_MODE_DESC = (
     'Which intermediate to draw instead of the shaded surface. Only read when Debug is on.\n\n'
@@ -1083,7 +1083,7 @@ def _set_enum_control(param, enum_path):
     """
     obj = unreal.load_object(None, enum_path)
     if obj is None:
-        unreal.log_warning('MobMasterMaterial: %s did not resolve, leaving the scalar numeric.'
+        unreal.log_warning('MobMaterials: %s did not resolve, leaving the scalar numeric.'
                            % enum_path)
         return
     try:
@@ -1091,7 +1091,7 @@ def _set_enum_control(param, enum_path):
                                   unreal.MaterialScalarParameterControlType.ENUMERATION)
         param.set_editor_property('enumeration', obj)
     except Exception as err:
-        unreal.log_warning('MobMasterMaterial: enum control unavailable (%s).' % err)
+        unreal.log_warning('MobMaterials: enum control unavailable (%s).' % err)
 
 
 def _param_vector(mat, name, rgb, group, x, y, sort=0):
@@ -1707,7 +1707,7 @@ def build_material_instances():
 def build_all(recipe=None):
     """Everything a recipe can author.
 
-    Pass a recipe asset or its path; the Mob toolbar menu passes the one it was run from. Without
+    Pass a recipe asset or its path; the Mat toolbar menu passes the one it was run from. Without
     one the module's own defaults stand, so this still runs from a bare Python console.
     """
     import mob_recipe

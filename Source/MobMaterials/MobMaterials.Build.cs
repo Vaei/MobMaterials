@@ -2,9 +2,9 @@
 
 using UnrealBuildTool;
 
-public class MobMasterMaterial : ModuleRules
+public class MobMaterials : ModuleRules
 {
-	public MobMasterMaterial(ReadOnlyTargetRules Target) : base(Target)
+	public MobMaterials(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 

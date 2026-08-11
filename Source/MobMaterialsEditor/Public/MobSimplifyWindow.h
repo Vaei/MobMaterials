@@ -17,7 +17,7 @@ class UMaterialInstanceConstant;
  * material down to one layer so what is on screen is that layer's textures and nothing else.
  */
 UCLASS(Config=EditorPerProjectUserSettings)
-class MOBMASTERMATERIALEDITOR_API UMobSimplifyOptions : public UObject
+class MOBMATERIALSEDITOR_API UMobSimplifyOptions : public UObject
 {
 	GENERATED_BODY()
 

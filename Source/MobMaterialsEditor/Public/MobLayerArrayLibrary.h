@@ -17,7 +17,7 @@ class UTexture2DArray;
  * themselves.
  */
 UCLASS()
-class MOBMASTERMATERIALEDITOR_API UMobLayerArrayLibrary : public UBlueprintFunctionLibrary
+class MOBMATERIALSEDITOR_API UMobLayerArrayLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 

@@ -3,7 +3,7 @@
 #pragma once
 
 // Helpers for the prop, environment and building master material. Included from Custom nodes as
-// /MobMasterMaterial/Public/MobSurface.ush.
+// /MobMaterials/Public/MobSurface.ush.
 //
 // The texture pack is BaseColor + Normal + CRM, where CRM is Cavity, Roughness, Metallic. There is
 // no AO channel on purpose: the renderer supplies its own occlusion and a baked AO on top of it
@@ -14,7 +14,7 @@
 // has no shared-sampler path, so the taps happen in TextureSample nodes set to Shared:Wrap and
 // these functions only produce coordinates or consume already-sampled values.
 
-#include "/MobMasterMaterial/Public/MobMaterialUtil.ush"
+#include "/MobMaterials/Public/MobMaterialUtil.ush"
 
 // ---------------------------------------------------------------------------
 // Coordinates

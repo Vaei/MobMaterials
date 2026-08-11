@@ -1,4 +1,4 @@
-# Mobile Forward-Rendering Master Material <img align="right" width=128, height=128 src="https://github.com/Vaei/MobMasterMaterial/blob/main/Resources/Icon128.png">
+# Mobile Forward-Rendering Materials <img align="right" width=128, height=128 src="https://github.com/Vaei/MobMaterials/blob/main/Resources/Icon128.png">
 
 > [!IMPORTANT]
 > Two AAA-tier master materials
@@ -13,7 +13,7 @@ UE5.8+
 ---
 
 > [!CAUTION]
-> <br>MobMasterMaterial has not officially released. Expect terrible bugs, and updates to occur without versioning or changelog reflecting them. Also any documentation is incomplete, no images or videos are available yet either. **Come back soon!**
+> <br>MobMaterials has not officially released. Expect terrible bugs, and updates to occur without versioning or changelog reflecting them. Also any documentation is incomplete, no images or videos are available yet either. **Come back soon!**
 
 <!-- TODO(image): hero shot - terrain with layers interlocking, a rock blending into the ground,
      everything wet -->
@@ -44,7 +44,7 @@ UE5.8+
 
 **Nothing you turn off is paid for.** Every feature is gated by a static bool on a material function input.
 
-<!-- TODO(image): the Mob menu and the generate window, side by side -->
+<!-- TODO(image): the Mat menu and the generate window, side by side -->
 
 ### Terrain that does not repeat, and does not cost what it looks like
 
@@ -82,7 +82,7 @@ UE5.8+
 - **Cavity, never ambient occlusion.** Micro shadowing multiplies base colour and specular; the AO pin stays free so it cannot double with the renderer's own occlusion
 - **A disabled feature is not compiled.** Its texture samples and its maths leave the shader entirely, rather than being multiplied by zero
 
-Full parameter-level detail is in [`MOBMASTER_LANDSCAPE.md`](./MOBMASTER_LANDSCAPE.md) and [`MOBMASTER_SURFACE.md`](./MOBMASTER_SURFACE.md). Making a world get wet, snowed on and dusty is a tutorial of its own: [`MOBMASTER_WEATHER.md`](./MOBMASTER_WEATHER.md).
+Full parameter-level detail is in [`MOBMATERIALS_LANDSCAPE.md`](./MOBMATERIALS_LANDSCAPE.md) and [`MOBMATERIALS_SURFACE.md`](./MOBMATERIALS_SURFACE.md). Making a world get wet, snowed on and dusty is a tutorial of its own: [`MOBMATERIALS_WEATHER.md`](./MOBMATERIALS_WEATHER.md).
 
 ### Texture packs
 
@@ -149,9 +149,9 @@ Enable the plugin, then author a master from a **recipe**. A recipe is an asset 
 
 **Mob → Generate Materials...** in the level editor toolbar. Pick a recipe or make one (Content Browser → Miscellaneous → Data Asset → Mob Material Recipe), set **Kind**, **Output Path** and **Asset Name**, then **Generate**.
 
-Every recipe in the project also appears directly on the **Mob** menu, so regenerating one later is a single click.
+Every recipe in the project also appears directly on the **Mat** menu, so regenerating one later is a single click.
 
-| Also on the Mob menu | |
+| Also on the Mat menu | |
 |---|---|
 | **Verify Contract** | asserts what each master claims to cost - taps and samplers per feature, the ambient occlusion pin left free, primitive data indices unmoved. Results in the Output Log |
 | **Report Cost** | how many distinct shader maps the instances add up to, and how much texture each master keeps resident |
@@ -163,7 +163,7 @@ Every recipe in the project also appears directly on the **Mob** menu, so regene
 | **Fit Selected Box Volume To Landscape** | centres and scales the selected volume to cover the nearest landscape exactly, streaming proxies included. Clears its rotation, since a turned box cannot be scaled to cover an axis aligned one |
 | **Open MPC_MobWeather** | straight to the wetness dial |
 | **Editor Preferences** | per-developer settings, not checked in |
-| **Hide This Menu** | takes the Mob button off your toolbar. Turn it back on under Editor Preferences, Plugins, Mob Master Material Editor |
+| **Hide This Menu** | takes the Mat button off your toolbar. Turn it back on under Editor Preferences, Plugins, Mob Materials Editor |
 
 Regenerating is idempotent: existing assets are emptied and rebuilt in place, so instances keep their references and their parameter values, and re-running is always safe.
 
@@ -199,7 +199,7 @@ To make it rain, set `Wetness` on the recipe's weather collection from Blueprint
 > <br>Here the channels are inverted: **black adds, white is neutral**, on all four. Unpainted is the base layer, dry and unshaded. The brush is subtractive - you paint black to add a layer.
 
 > [!NOTE]
-> Full documentation: [`MOBMASTER_SURFACE.md`](./MOBMASTER_SURFACE.md).
+> Full documentation: [`MOBMATERIALS_SURFACE.md`](./MOBMATERIALS_SURFACE.md).
 
 ### Landscape
 
@@ -215,7 +215,7 @@ Layer count is built into the material graph, so it cannot be changed on an inst
 Past about four layers, tick **Texture Array Layers**: every layer is then one slice of three arrays rather than three textures of its own, so eight layers is three texture objects instead of twenty-four. Set **Layer Texture Root**, run **Mob → Pack Layers**, then generate.
 
 > [!NOTE]
-> Full documentation: [`MOBMASTER_LANDSCAPE.md`](./MOBMASTER_LANDSCAPE.md).
+> Full documentation: [`MOBMATERIALS_LANDSCAPE.md`](./MOBMATERIALS_LANDSCAPE.md).
 
 ### Try it
 
@@ -225,7 +225,7 @@ It opens a new level, so it asks first.
 
 ### Then what
 
-[`MOBMASTER_TUTORIAL.md`](./MOBMASTER_TUTORIAL.md) walks the whole feature set in the order that needs the least backtracking - layers and blending, tiling break, detail, parallax, per-instance variation, weather, foliage, terrain - with the wrong turns people actually hit. Start there once the above works.
+[`MOBMATERIALS_TUTORIAL.md`](./MOBMATERIALS_TUTORIAL.md) walks the whole feature set in the order that needs the least backtracking - layers and blending, tiling break, detail, parallax, per-instance variation, weather, foliage, terrain - with the wrong turns people actually hit. Start there once the above works.
 
 ### Runtime virtual texture, footsteps, grass
 
@@ -298,6 +298,6 @@ Every distinct set of static switches is a distinct shader map, and PSOs are per
 * Project integration: runtime virtual texture with mesh blending, physical material output for footsteps, grass output
 * Debug views on both masters, sent to emissive with base colour blacked out
 * Recipe assets drive generation, so a project carries as many masters as it needs
-* Mob toolbar menu: generate, pack layer arrays, test level, contract verification, cost reporting, weather collection, and a per-developer hide
+* Mat toolbar menu: generate, pack layer arrays, test level, contract verification, cost reporting, weather collection, and a per-developer hide
 * Fit UV Scale To Landscape: every layer's tile size worked out from the landscape's own quad size
 * Remap Texture Channels: repacks ORM, MRAO, RMA or separate maps into HRC or CRM, with a custom slot per output channel

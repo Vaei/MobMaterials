@@ -26,7 +26,7 @@
 #include "Widgets/SWindow.h"
 #include "Widgets/Text/STextBlock.h"
 
-#define LOCTEXT_NAMESPACE "MobMasterMaterialEditor"
+#define LOCTEXT_NAMESPACE "MobMaterialsEditor"
 
 namespace
 {

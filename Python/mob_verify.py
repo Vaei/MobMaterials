@@ -5,7 +5,7 @@ something changed without telling you whether it matters. These are the claims t
 reference docs actually make - what a feature costs, what it leaves alone - asserted one at a time
 so a failure names the claim that stopped being true.
 
-Run from the Mob toolbar menu, or:
+Run from the Mat toolbar menu, or:
 
     import mob_verify
     mob_verify.run('/Game/Path/MR_MySurface')

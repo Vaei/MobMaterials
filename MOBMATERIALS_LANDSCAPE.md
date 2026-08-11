@@ -1,6 +1,6 @@
 # Landscape Reference
 
-Setup and troubleshooting are in [`README.md`](README.md). The surface master is in [`MOBMASTER_SURFACE.md`](MOBMASTER_SURFACE.md).
+Setup and troubleshooting are in [`README.md`](README.md). The surface master is in [`MOBMATERIALS_SURFACE.md`](MOBMATERIALS_SURFACE.md).
 
 | System | |
 |---|---|

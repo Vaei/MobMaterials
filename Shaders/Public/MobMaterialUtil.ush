@@ -3,7 +3,7 @@
 #pragma once
 
 // Shared helpers for the surface materials. Included from Custom nodes as
-// /MobMasterMaterial/Public/MobMaterialUtil.ush (the /Project mapping is registered by the engine).
+// /MobMaterials/Public/MobMaterialUtil.ush (the /Project mapping is registered by the engine).
 
 #define MOB_EPS 1e-5f
 

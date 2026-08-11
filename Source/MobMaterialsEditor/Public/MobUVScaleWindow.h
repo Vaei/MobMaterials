@@ -18,7 +18,7 @@ class UMaterialInstanceConstant;
  * at the wrong size at once - which reads as a blurred or moire mess rather than as a wrong number.
  */
 UCLASS(Config=EditorPerProjectUserSettings)
-class MOBMASTERMATERIALEDITOR_API UMobUVScaleOptions : public UObject
+class MOBMATERIALSEDITOR_API UMobUVScaleOptions : public UObject
 {
 	GENERATED_BODY()
 

@@ -208,7 +208,7 @@ void SMobGenerateWindow::Open(UMobMaterialRecipe* Recipe)
 	const TSharedRef<SMobGenerateWindow> Content = SNew(SMobGenerateWindow);
 
 	const TSharedRef<SWindow> Window = SNew(SWindow)
-		.Title(LOCTEXT("WindowTitle", "Mob Master Material"))
+		.Title(LOCTEXT("WindowTitle", "Mob Materials"))
 		.ClientSize(FVector2D(560.f, 720.f))
 		.SupportsMaximize(false)
 		[
@@ -274,20 +274,20 @@ bool SMobGenerateWindow::RunGenerator(UMobMaterialRecipe* Recipe, const TCHAR* M
 {
 	if (!Recipe)
 	{
-		Notify(LOCTEXT("GenNoRecipe", "Mob: no recipe selected."), false);
+		Notify(LOCTEXT("GenNoRecipe", "Mat: no recipe selected."), false);
 		return false;
 	}
 
 	if (!IPythonScriptPlugin::Get() || !IPythonScriptPlugin::Get()->IsPythonAvailable())
 	{
-		Notify(LOCTEXT("GenNoPython", "Mob: enable the Python Editor Script Plugin to generate."), false);
+		Notify(LOCTEXT("GenNoPython", "Mat: enable the Python Editor Script Plugin to generate."), false);
 		return false;
 	}
 
-	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("MobMasterMaterial"));
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("MobMaterials"));
 	if (!Plugin.IsValid())
 	{
-		Notify(LOCTEXT("GenNoPlugin", "Mob: could not locate the plugin directory."), false);
+		Notify(LOCTEXT("GenNoPlugin", "Mat: could not locate the plugin directory."), false);
 		return false;
 	}
 
@@ -310,7 +310,7 @@ bool SMobGenerateWindow::RunGenerator(UMobMaterialRecipe* Recipe, const TCHAR* M
 	else
 	{
 		// The Python error itself goes to the Output Log, which is where the detail is.
-		Notify(LOCTEXT("GenFailed", "Mob: failed. See the Output Log."), false);
+		Notify(LOCTEXT("GenFailed", "Mat: failed. See the Output Log."), false);
 	}
 	return bOk;
 }
@@ -319,7 +319,7 @@ bool SMobGenerateWindow::Generate(UMobMaterialRecipe* Recipe)
 {
 	if (!Recipe)
 	{
-		Notify(LOCTEXT("GenNoRecipe2", "Mob: no recipe selected."), false);
+		Notify(LOCTEXT("GenNoRecipe2", "Mat: no recipe selected."), false);
 		return false;
 	}
 
@@ -327,14 +327,14 @@ bool SMobGenerateWindow::Generate(UMobMaterialRecipe* Recipe)
 		? TEXT("author_landscape") : TEXT("author_surface");
 
 	return RunGenerator(Recipe, Module, TEXT("build_all"),
-		FText::Format(LOCTEXT("GenDone", "Mob: authored M_{0}."), FText::FromString(Recipe->AssetName)));
+		FText::Format(LOCTEXT("GenDone", "Mat: authored M_{0}."), FText::FromString(Recipe->AssetName)));
 }
 
 bool SMobGenerateWindow::CreateTestLevel(UMobMaterialRecipe* Recipe)
 {
 	if (!Recipe || Recipe->Kind != EMobMaterialKind::Surface)
 	{
-		Notify(LOCTEXT("TestNeedsSurface", "Mob: test levels are built from a surface recipe."), false);
+		Notify(LOCTEXT("TestNeedsSurface", "Mat: test levels are built from a surface recipe."), false);
 		return false;
 	}
 
@@ -348,7 +348,7 @@ bool SMobGenerateWindow::CreateTestLevel(UMobMaterialRecipe* Recipe)
 	}
 
 	return RunGenerator(Recipe, TEXT("author_test_level"), TEXT("build"),
-		FText::Format(LOCTEXT("TestDone", "Mob: test level built for M_{0}."),
+		FText::Format(LOCTEXT("TestDone", "Mat: test level built for M_{0}."),
 			FText::FromString(Recipe->AssetName)));
 }
 

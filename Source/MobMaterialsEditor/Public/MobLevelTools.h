@@ -11,7 +11,7 @@ class AActor;
  * transform panel makes easy: putting something in the middle of the ground, and making a volume
  * cover exactly as much ground as there is.
  */
-class MOBMASTERMATERIALEDITOR_API FMobLevelTools
+class MOBMATERIALSEDITOR_API FMobLevelTools
 {
 public:
 	/** Moves the selection to the middle of the nearest landscape and sits it on the surface. */

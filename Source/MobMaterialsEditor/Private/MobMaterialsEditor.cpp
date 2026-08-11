@@ -1,12 +1,12 @@
 // Copyright (c) Jared Taylor
 
-#include "MobMasterMaterialEditor.h"
+#include "MobMaterialsEditor.h"
 
 #include "MobChannelRemapWindow.h"
 #include "MobLevelTools.h"
-#include "MobMasterMaterialEditorStyle.h"
+#include "MobMaterialsEditorStyle.h"
 #include "MobSimplifyWindow.h"
-#include "MobMasterMaterialEditorUserSettings.h"
+#include "MobMaterialsEditorUserSettings.h"
 #include "MobUVScaleWindow.h"
 #include "SMobGenerateWindow.h"
 
@@ -27,27 +27,27 @@
 #include "ToolMenus.h"
 #include "Widgets/Text/STextBlock.h"
 
-#define LOCTEXT_NAMESPACE "MobMasterMaterialEditor"
+#define LOCTEXT_NAMESPACE "MobMaterialsEditor"
 
-void FMobMasterMaterialEditorModule::StartupModule()
+void FMobMaterialsEditorModule::StartupModule()
 {
-	FMobMasterMaterialEditorStyle::Register();
+	FMobMaterialsEditorStyle::Register();
 
 	if (UToolMenus::IsToolMenuUIEnabled())
 	{
 		UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(
-			this, &FMobMasterMaterialEditorModule::RegisterMenus));
+			this, &FMobMaterialsEditorModule::RegisterMenus));
 	}
 }
 
-void FMobMasterMaterialEditorModule::ShutdownModule()
+void FMobMaterialsEditorModule::ShutdownModule()
 {
 	UToolMenus::UnRegisterStartupCallback(this);
 	UToolMenus::UnregisterOwner(this);
-	FMobMasterMaterialEditorStyle::Unregister();
+	FMobMaterialsEditorStyle::Unregister();
 }
 
-void FMobMasterMaterialEditorModule::RegisterMenus()
+void FMobMaterialsEditorModule::RegisterMenus()
 {
 	FToolMenuOwnerScoped OwnerScoped(this);
 
@@ -58,17 +58,17 @@ void FMobMasterMaterialEditorModule::RegisterMenus()
 	}
 
 	FToolMenuEntry Entry = FToolMenuEntry::InitComboButton(
-		TEXT("MobMenu"),
+		TEXT("MatMenu"),
 		FUIAction(
 			FExecuteAction(),
 			FCanExecuteAction(),
 			FIsActionChecked(),
-			FIsActionButtonVisible::CreateStatic(&FMobMasterMaterialEditorModule::IsToolbarMenuEnabled)),
-		FOnGetContent::CreateRaw(this, &FMobMasterMaterialEditorModule::BuildMenu),
-		LOCTEXT("MobToolbar", "Mob"),
-		LOCTEXT("MobToolbarTip", "Master material tools"),
-		FSlateIcon(FMobMasterMaterialEditorStyle::GetStyleSetName(),
-			FMobMasterMaterialEditorStyle::GetMenuIconName())
+			FIsActionButtonVisible::CreateStatic(&FMobMaterialsEditorModule::IsToolbarMenuEnabled)),
+		FOnGetContent::CreateRaw(this, &FMobMaterialsEditorModule::BuildMenu),
+		LOCTEXT("MatToolbar", "Mat"),
+		LOCTEXT("MatToolbarTip", "Master material tools"),
+		FSlateIcon(FMobMaterialsEditorStyle::GetStyleSetName(),
+			FMobMaterialsEditorStyle::GetMenuIconName())
 	);
 
 	// The style that gives a toolbar button its label beside the icon.
@@ -77,7 +77,7 @@ void FMobMasterMaterialEditorModule::RegisterMenus()
 	ToolBar->FindOrAddSection(TEXT("PlayGameExtensions")).AddEntry(Entry);
 }
 
-void FMobMasterMaterialEditorModule::FindRecipes(TArray<FAssetData>& OutRecipes)
+void FMobMaterialsEditorModule::FindRecipes(TArray<FAssetData>& OutRecipes)
 {
 	const FAssetRegistryModule& Registry =
 		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
@@ -93,7 +93,7 @@ void FMobMasterMaterialEditorModule::FindRecipes(TArray<FAssetData>& OutRecipes)
 	});
 }
 
-TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
+TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 {
 	FMenuBuilder Menu(true, nullptr);
 
@@ -103,9 +103,9 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 		LOCTEXT("OpenWindowTip",
 			"Pick a recipe, edit it, and author the master it describes. A recipe is an asset, so a "
 			"project can carry as many masters as it needs."),
-		FSlateIcon(FMobMasterMaterialEditorStyle::GetStyleSetName(),
-			FMobMasterMaterialEditorStyle::GetMenuIconName()),
-		FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::OpenWindow)));
+		FSlateIcon(FMobMaterialsEditorStyle::GetStyleSetName(),
+			FMobMaterialsEditorStyle::GetMenuIconName()),
+		FUIAction(FExecuteAction::CreateStatic(&FMobMaterialsEditorModule::OpenWindow)));
 	Menu.EndSection();
 
 	TArray<FAssetData> Recipes;
@@ -123,7 +123,7 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 					FText::FromName(Asset.AssetName)),
 				FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Refresh")),
 				FUIAction(FExecuteAction::CreateStatic(
-					&FMobMasterMaterialEditorModule::GenerateRecipe, Path)));
+					&FMobMaterialsEditorModule::GenerateRecipe, Path)));
 		}
 		Menu.EndSection();
 	}
@@ -176,7 +176,7 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 					"changes."),
 				FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.Texture2DArray")),
 				FUIAction(FExecuteAction::CreateStatic(
-					&FMobMasterMaterialEditorModule::PackLayerArrays, Path)));
+					&FMobMaterialsEditorModule::PackLayerArrays, Path)));
 		}
 		Menu.EndSection();
 	}
@@ -195,9 +195,9 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 				FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Edit")),
 				FUIAction(
 					FExecuteAction::CreateStatic(
-						&FMobMasterMaterialEditorModule::OpenWeatherCollection, Path),
+						&FMobMaterialsEditorModule::OpenWeatherCollection, Path),
 					FCanExecuteAction::CreateStatic(
-						&FMobMasterMaterialEditorModule::WeatherCollectionExists, Path)));
+						&FMobMaterialsEditorModule::WeatherCollectionExists, Path)));
 		}
 		Menu.EndSection();
 	}
@@ -212,7 +212,7 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 				"one costs in taps and samplers, that ambient occlusion is left alone, that the custom "
 				"primitive data indices have not moved."),
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Check")),
-			FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::VerifyAll)));
+			FUIAction(FExecuteAction::CreateStatic(&FMobMaterialsEditorModule::VerifyAll)));
 
 		Menu.AddMenuEntry(
 			LOCTEXT("Report", "Report Cost"),
@@ -220,7 +220,7 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 				"Distinct shader permutations the instances add up to, and texture held resident per "
 				"master. Both otherwise surface at cook time."),
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Statistics")),
-			FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::ReportAll)));
+			FUIAction(FExecuteAction::CreateStatic(&FMobMaterialsEditorModule::ReportAll)));
 		Menu.EndSection();
 	}
 
@@ -294,15 +294,15 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 		LOCTEXT("EditorSettings", "Editor Preferences"),
 		LOCTEXT("EditorSettingsTip", "Per-developer settings for this plugin. Not checked in."),
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Toolbar.Settings")),
-		FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::OpenSettings)));
+		FUIAction(FExecuteAction::CreateStatic(&FMobMaterialsEditorModule::OpenSettings)));
 
 	Menu.AddMenuEntry(
 		LOCTEXT("HideMenu", "Hide This Menu"),
 		LOCTEXT("HideMenuTip",
-			"Removes the Mob button from your toolbar. Turn it back on under Editor Preferences, Plugins, "
-			"Mob Master Material Editor."),
+			"Removes the Mat button from your toolbar. Turn it back on under Editor Preferences, Plugins, "
+			"Mob Materials Editor."),
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Visibility")),
-		FUIAction(FExecuteAction::CreateStatic(&FMobMasterMaterialEditorModule::HideToolbarMenu)));
+		FUIAction(FExecuteAction::CreateStatic(&FMobMaterialsEditorModule::HideToolbarMenu)));
 	Menu.EndSection();
 
 	if (!IsPythonAvailable())
@@ -321,29 +321,29 @@ TSharedRef<SWidget> FMobMasterMaterialEditorModule::BuildMenu()
 	return Menu.MakeWidget();
 }
 
-bool FMobMasterMaterialEditorModule::IsPythonAvailable()
+bool FMobMaterialsEditorModule::IsPythonAvailable()
 {
 	return IPythonScriptPlugin::Get() && IPythonScriptPlugin::Get()->IsPythonAvailable();
 }
 
-void FMobMasterMaterialEditorModule::OpenWindow()
+void FMobMaterialsEditorModule::OpenWindow()
 {
 	SMobGenerateWindow::Open();
 }
 
-void FMobMasterMaterialEditorModule::GenerateRecipe(FSoftObjectPath Path)
+void FMobMaterialsEditorModule::GenerateRecipe(FSoftObjectPath Path)
 {
 	SMobGenerateWindow::Generate(Cast<UMobMaterialRecipe>(Path.TryLoad()));
 }
 
-bool FMobMasterMaterialEditorModule::RunPython(const FString& Snippet, const FText& DoneMessage)
+bool FMobMaterialsEditorModule::RunPython(const FString& Snippet, const FText& DoneMessage)
 {
 	if (!IsPythonAvailable())
 	{
 		return false;
 	}
 
-	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("MobMasterMaterial"));
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("MobMaterials"));
 	if (!Plugin.IsValid())
 	{
 		return false;
@@ -361,7 +361,7 @@ bool FMobMasterMaterialEditorModule::RunPython(const FString& Snippet, const FTe
 	const bool bOk = IPythonScriptPlugin::Get()->ExecPythonCommand(*Command);
 
 	FNotificationInfo Info(bOk ? DoneMessage
-		: LOCTEXT("PythonFailed", "Mob: failed. See the Output Log."));
+		: LOCTEXT("PythonFailed", "Mat: failed. See the Output Log."));
 	Info.ExpireDuration = bOk ? 4.f : 8.f;
 	if (const TSharedPtr<SNotificationItem> Item = FSlateNotificationManager::Get().AddNotification(Info))
 	{
@@ -370,7 +370,7 @@ bool FMobMasterMaterialEditorModule::RunPython(const FString& Snippet, const FTe
 	return bOk;
 }
 
-void FMobMasterMaterialEditorModule::VerifyAll()
+void FMobMaterialsEditorModule::VerifyAll()
 {
 	TArray<FAssetData> Recipes;
 	FindRecipes(Recipes);
@@ -382,55 +382,55 @@ void FMobMasterMaterialEditorModule::VerifyAll()
 			*Asset.ToSoftObjectPath().ToString());
 	}
 
-	RunPython(Snippet, LOCTEXT("VerifyDone", "Mob: verification finished. See the Output Log."));
+	RunPython(Snippet, LOCTEXT("VerifyDone", "Mat: verification finished. See the Output Log."));
 }
 
-void FMobMasterMaterialEditorModule::ReportAll()
+void FMobMaterialsEditorModule::ReportAll()
 {
 	RunPython(TEXT("import importlib, mob_report; importlib.reload(mob_report); mob_report.run_all()"),
-		LOCTEXT("ReportDone", "Mob: report written to the Output Log."));
+		LOCTEXT("ReportDone", "Mat: report written to the Output Log."));
 }
 
-void FMobMasterMaterialEditorModule::PackLayerArrays(FSoftObjectPath Path)
+void FMobMaterialsEditorModule::PackLayerArrays(FSoftObjectPath Path)
 {
 	const FString Snippet = FString::Printf(
 		TEXT("import importlib, mob_arrays; importlib.reload(mob_arrays); mob_arrays.pack(r'%s')"),
 		*Path.ToString());
 
-	RunPython(Snippet, LOCTEXT("PackDone", "Mob: layer arrays packed. See the Output Log."));
+	RunPython(Snippet, LOCTEXT("PackDone", "Mat: layer arrays packed. See the Output Log."));
 }
 
-bool FMobMasterMaterialEditorModule::IsToolbarMenuEnabled()
+bool FMobMaterialsEditorModule::IsToolbarMenuEnabled()
 {
-	return GetDefault<UMobMasterMaterialEditorUserSettings>()->bShowToolbarMenu;
+	return GetDefault<UMobMaterialsEditorUserSettings>()->bShowToolbarMenu;
 }
 
-void FMobMasterMaterialEditorModule::HideToolbarMenu()
+void FMobMaterialsEditorModule::HideToolbarMenu()
 {
-	UMobMasterMaterialEditorUserSettings* Settings =
-		GetMutableDefault<UMobMasterMaterialEditorUserSettings>();
+	UMobMaterialsEditorUserSettings* Settings =
+		GetMutableDefault<UMobMaterialsEditorUserSettings>();
 	Settings->bShowToolbarMenu = false;
 	Settings->SaveConfig();
 }
 
-void FMobMasterMaterialEditorModule::OpenSettings()
+void FMobMaterialsEditorModule::OpenSettings()
 {
 	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>(TEXT("Settings")))
 	{
-		const UMobMasterMaterialEditorUserSettings* Settings =
-			GetDefault<UMobMasterMaterialEditorUserSettings>();
+		const UMobMaterialsEditorUserSettings* Settings =
+			GetDefault<UMobMaterialsEditorUserSettings>();
 		SettingsModule->ShowViewer(Settings->GetContainerName(), Settings->GetCategoryName(),
 			Settings->GetSectionName());
 	}
 }
 
-bool FMobMasterMaterialEditorModule::WeatherCollectionExists(FSoftObjectPath Path)
+bool FMobMaterialsEditorModule::WeatherCollectionExists(FSoftObjectPath Path)
 {
 	// The collection is authored by the generator, so before a first run it will not be there yet.
 	return FPackageName::DoesPackageExist(Path.GetLongPackageName());
 }
 
-void FMobMasterMaterialEditorModule::OpenWeatherCollection(FSoftObjectPath Path)
+void FMobMaterialsEditorModule::OpenWeatherCollection(FSoftObjectPath Path)
 {
 	if (UObject* Collection = Path.TryLoad(); Collection && GEditor)
 	{
@@ -440,4 +440,4 @@ void FMobMasterMaterialEditorModule::OpenWeatherCollection(FSoftObjectPath Path)
 
 #undef LOCTEXT_NAMESPACE
 
-IMPLEMENT_MODULE(FMobMasterMaterialEditorModule, MobMasterMaterialEditor)
+IMPLEMENT_MODULE(FMobMaterialsEditorModule, MobMaterialsEditor)

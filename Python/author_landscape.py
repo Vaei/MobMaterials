@@ -12,7 +12,7 @@ Every phase is idempotent: an existing asset is emptied and rebuilt in place so 
 instances and the landscape keep their references.
 
 The heavy maths lives in Shaders/Public/Mob*.ush and is reached from Custom nodes through the
-/MobMasterMaterial mapping the module registers, so the graphs here stay thin.
+/MobMaterials mapping the module registers, so the graphs here stay thin.
 
 build_all() writes only into the plugin. The phases under PROJECT INTEGRATION below author
 assets that belong to a game rather than to the plugin - physical materials, layer infos, grass
@@ -28,14 +28,14 @@ EAL = unreal.EditorAssetLibrary
 
 # Where the master and its instances are written. Point this into a project to author a variant
 # that carries the project outputs below without dirtying the plugin's own copy.
-ROOT = '/MobMasterMaterial/Landscape'
+ROOT = '/MobMaterials/Landscape'
 
 # Base name for the authored assets: M_<MASTER_NAME>, MI_<MASTER_NAME>. A recipe overrides it.
 MASTER_NAME = 'MobLandscape'
 
 # Where the material functions live. Leave this alone when ROOT moves: the functions are the same
 # either way, and a project master reusing them keeps one copy of the maths.
-FN_ROOT = '/MobMasterMaterial/Landscape/Functions'
+FN_ROOT = '/MobMaterials/Landscape/Functions'
 
 INCLUDE_DEBUG = True
 
@@ -46,16 +46,16 @@ TEXTURE_ARRAYS = False
 LAYER_TEXTURE_ROOT = ''
 
 INCLUDES = [
-    '/MobMasterMaterial/Public/MobMaterialUtil.ush',
-    '/MobMasterMaterial/Public/MobLandscapeBombing.ush',
+    '/MobMaterials/Public/MobMaterialUtil.ush',
+    '/MobMaterials/Public/MobLandscapeBombing.ush',
 ]
 
 # Base materials always default their texture parameters to these neutrals rather than to real
 # art, so a base material never drags unused textures into memory.
 # One per sampler type: the defaults have to match or the sampler type check fails.
-BASE_TEX_BC = '/MobMasterMaterial/Textures/T_BaseGrey'      # sRGB colour
-BASE_TEX_NRM = '/MobMasterMaterial/Textures/T_BaseNormal'   # normal map
-BASE_TEX_HRC = '/MobMasterMaterial/Textures/T_BaseLinear'   # linear mask pack
+BASE_TEX_BC = '/MobMaterials/Textures/T_BaseGrey'      # sRGB colour
+BASE_TEX_NRM = '/MobMaterials/Textures/T_BaseNormal'   # normal map
+BASE_TEX_HRC = '/MobMaterials/Textures/T_BaseLinear'   # linear mask pack
 
 # Paint layers, in blend order. Surface type and physical material are consumed by the
 # LayerInfo/physmat phase, not by the material graph itself.
@@ -86,7 +86,7 @@ def _tools():
 
 
 def _log(msg):
-    unreal.log('[MobMasterMaterial] ' + str(msg))
+    unreal.log('[MobMaterials] ' + str(msg))
 
 
 def _clear_function(fn):
@@ -127,7 +127,7 @@ def get_or_create_function(name, description=''):
                                    unreal.MaterialFunctionFactoryNew())
     fn.set_editor_property('description', description)
     fn.set_editor_property('expose_to_library', True)
-    fn.set_editor_property('library_categories_text', ['MobMasterMaterial', 'Landscape'])
+    fn.set_editor_property('library_categories_text', ['MobMaterials', 'Landscape'])
     return fn
 
 
@@ -1014,7 +1014,7 @@ def _set_enum_control(param, enum_path):
     """
     obj = unreal.load_object(None, enum_path)
     if obj is None:
-        unreal.log_warning('MobMasterMaterial: %s did not resolve, leaving the scalar numeric.'
+        unreal.log_warning('MobMaterials: %s did not resolve, leaving the scalar numeric.'
                            % enum_path)
         return
     try:
@@ -1022,7 +1022,7 @@ def _set_enum_control(param, enum_path):
                                   unreal.MaterialScalarParameterControlType.ENUMERATION)
         param.set_editor_property('enumeration', obj)
     except Exception as err:
-        unreal.log_warning('MobMasterMaterial: enum control unavailable (%s).' % err)
+        unreal.log_warning('MobMaterials: enum control unavailable (%s).' % err)
 
 
 def _param_vector(mat, name, rgb, group, x, y, sort=0):
@@ -1140,7 +1140,7 @@ _CODE_DEBUG = """
 return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour) * max(Exposure, 0.0f);
 """
 
-DEBUG_ENUM = '/Script/MobMasterMaterial.EMobDebugView'
+DEBUG_ENUM = '/Script/MobMaterials.EMobDebugView'
 
 DEBUG_MODE_DESC = (
     'Which intermediate to draw instead of the terrain. Only read when Debug is on.\n\n'
@@ -2079,7 +2079,7 @@ def build_functions():
 def build_all(recipe=None):
     """Everything a recipe can author without touching a level.
 
-    Pass a recipe asset or its path; the Mob toolbar menu passes the one it was run from. Without
+    Pass a recipe asset or its path; the Mat toolbar menu passes the one it was run from. Without
     one the module's own defaults stand, so this still runs from a bare Python console.
     """
     import mob_recipe

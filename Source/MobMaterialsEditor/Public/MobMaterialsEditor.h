@@ -9,7 +9,7 @@
 
 class SWidget;
 
-class FMobMasterMaterialEditorModule final : public IModuleInterface
+class FMobMaterialsEditorModule final : public IModuleInterface
 {
 public:
 	virtual void StartupModule() override;

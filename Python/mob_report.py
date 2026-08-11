@@ -6,7 +6,7 @@ discovered at cook time if nobody looks earlier:
   permutations()     how many distinct shader maps the instances add up to
   texture_memory()   how much texture a master's instances drag in
 
-Run from the Mob toolbar menu, or:
+Run from the Mat toolbar menu, or:
 
     import mob_report
     mob_report.permutations()
@@ -27,7 +27,7 @@ def _masters():
     """Every material generated from a recipe in this project."""
     found = []
     recipes = REG.get_assets_by_class(
-        unreal.TopLevelAssetPath('/Script/MobMasterMaterial', 'MobMaterialRecipe'), False)
+        unreal.TopLevelAssetPath('/Script/MobMaterials', 'MobMaterialRecipe'), False)
     for a in recipes:
         recipe = unreal.load_asset(str(a.package_name))
         root = str(recipe.get_editor_property('output_path').get_editor_property('path')).rstrip('/')

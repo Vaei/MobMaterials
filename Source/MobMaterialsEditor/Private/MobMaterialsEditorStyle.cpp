@@ -1,27 +1,27 @@
 // Copyright (c) Jared Taylor
 
-#include "MobMasterMaterialEditorStyle.h"
+#include "MobMaterialsEditorStyle.h"
 
 #include "Interfaces/IPluginManager.h"
 #include "Styling/SlateStyle.h"
 #include "Styling/SlateStyleRegistry.h"
 
-TSharedPtr<FSlateStyleSet> FMobMasterMaterialEditorStyle::StyleSet;
+TSharedPtr<FSlateStyleSet> FMobMaterialsEditorStyle::StyleSet;
 
-FName FMobMasterMaterialEditorStyle::GetStyleSetName()
+FName FMobMaterialsEditorStyle::GetStyleSetName()
 {
-	static const FName StyleName(TEXT("MobMasterMaterialEditorStyle"));
+	static const FName StyleName(TEXT("MobMaterialsEditorStyle"));
 	return StyleName;
 }
 
-void FMobMasterMaterialEditorStyle::Register()
+void FMobMaterialsEditorStyle::Register()
 {
 	if (StyleSet.IsValid())
 	{
 		return;
 	}
 
-	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("MobMasterMaterial"));
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("MobMaterials"));
 	if (!Plugin.IsValid())
 	{
 		return;
@@ -37,7 +37,7 @@ void FMobMasterMaterialEditorStyle::Register()
 	FSlateStyleRegistry::RegisterSlateStyle(*StyleSet);
 }
 
-void FMobMasterMaterialEditorStyle::Unregister()
+void FMobMaterialsEditorStyle::Unregister()
 {
 	if (StyleSet.IsValid())
 	{

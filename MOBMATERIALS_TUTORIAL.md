@@ -47,7 +47,7 @@ If you only read one section, read this one. Each step is expanded below.
 7. **Weather** - `bWetness` on, drag `Wetness` on the collection 0 to 1. Then `bRipples`, then `bAccumulation`.
 8. **Foliage** - second recipe, same output path, `bFoliage` on, different asset name. Generate.
 9. **Terrain** - landscape recipe, layers named, generate, assign, paint.
-10. **Verify and Report** from the Mob menu. Read the numbers.
+10. **Verify and Report** from the Mat menu. Read the numbers.
 
 ## 1. Decide the recipe
 
@@ -158,7 +158,7 @@ Start with only `RoughnessTarget` and `Darkening`. Wet is mostly a roughness cha
 Then `bRipples` for rain - set `RippleNormal` too, it defaults to flat - and `bAccumulation` for snow, dust or ash, which needs no art at all.
 
 > [!NOTE]
-> Weather has a tutorial of its own with the numbers for each: [`MOBMASTER_WEATHER.md`](./MOBMASTER_WEATHER.md).
+> Weather has a tutorial of its own with the numbers for each: [`MOBMATERIALS_WEATHER.md`](./MOBMATERIALS_WEATHER.md).
 
 ## 6. Foliage
 
@@ -251,7 +251,7 @@ The landscape master has the same views for weights, cavity, wetness and height.
 
 ## Keeping the cost honest
 
-Two things on the Mob menu, both of which answer questions that otherwise surface at cook time.
+Two things on the Mat menu, both of which answer questions that otherwise surface at cook time.
 
 **Verify Contract** builds a scratch instance per feature and asserts what the documentation claims - taps and samplers per feature, that the ambient occlusion pin is left alone, that the custom primitive data indices have not moved. Run it after changing a recipe.
 
@@ -279,6 +279,6 @@ Two things on the Mob menu, both of which answer questions that otherwise surfac
 
 | Reference | |
 |---|---|
-| [`MOBMASTER_SURFACE.md`](./MOBMASTER_SURFACE.md) | every surface parameter |
-| [`MOBMASTER_LANDSCAPE.md`](./MOBMASTER_LANDSCAPE.md) | every landscape parameter |
-| [`MOBMASTER_WEATHER.md`](./MOBMASTER_WEATHER.md) | rain, snow, dust |
+| [`MOBMATERIALS_SURFACE.md`](./MOBMATERIALS_SURFACE.md) | every surface parameter |
+| [`MOBMATERIALS_LANDSCAPE.md`](./MOBMATERIALS_LANDSCAPE.md) | every landscape parameter |
+| [`MOBMATERIALS_WEATHER.md`](./MOBMATERIALS_WEATHER.md) | rain, snow, dust |

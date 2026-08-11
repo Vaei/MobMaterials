@@ -6,8 +6,8 @@
 
 class FSlateStyleSet;
 
-/** Slate brushes for the Mob editor UI, sourced from the plugin's Resources folder. */
-class MOBMASTERMATERIALEDITOR_API FMobMasterMaterialEditorStyle
+/** Slate brushes for the MobMaterials editor UI, sourced from the plugin's Resources folder. */
+class MOBMATERIALSEDITOR_API FMobMaterialsEditorStyle
 {
 public:
 	static void Register();

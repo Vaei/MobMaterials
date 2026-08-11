@@ -4,19 +4,19 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
-#include "MobMasterMaterialEditorUserSettings.generated.h"
+#include "MobMaterialsEditorUserSettings.generated.h"
 
 /**
  * Per-developer editor preferences. Stored in EditorPerProjectUserSettings, so these are not
  * checked in and one dev's choice never lands on anyone else.
  */
-UCLASS(Config=EditorPerProjectUserSettings, meta=(DisplayName="Mob Master Material Editor"))
-class MOBMASTERMATERIALEDITOR_API UMobMasterMaterialEditorUserSettings : public UDeveloperSettings
+UCLASS(Config=EditorPerProjectUserSettings, meta=(DisplayName="Mob Materials Editor"))
+class MOBMATERIALSEDITOR_API UMobMaterialsEditorUserSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
 
 public:
-	/** Show the Mob dropdown in the level editor toolbar. */
+	/** Show the Mat dropdown in the level editor toolbar. */
 	UPROPERTY(EditAnywhere, Config, Category="Toolbar")
 	bool bShowToolbarMenu = true;
 

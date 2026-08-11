@@ -14,7 +14,7 @@
 #include "GameFramework/Volume.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
-#define LOCTEXT_NAMESPACE "MobMasterMaterialEditor"
+#define LOCTEXT_NAMESPACE "MobMaterialsEditor"
 
 namespace
 {

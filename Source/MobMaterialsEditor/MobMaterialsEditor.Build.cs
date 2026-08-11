@@ -2,9 +2,9 @@
 
 using UnrealBuildTool;
 
-public class MobMasterMaterialEditor : ModuleRules
+public class MobMaterialsEditor : ModuleRules
 {
-	public MobMasterMaterialEditor(ReadOnlyTargetRules Target) : base(Target)
+	public MobMaterialsEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
@@ -29,7 +29,7 @@ public class MobMasterMaterialEditor : ModuleRules
 				"Projects",
 				"Settings",
 				"PythonScriptPlugin",
-				"MobMasterMaterial",
+				"MobMaterials",
 				"PropertyEditor",
 				"ContentBrowser",
 				"AssetRegistry",

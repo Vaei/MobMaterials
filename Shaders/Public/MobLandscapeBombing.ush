@@ -3,7 +3,7 @@
 #pragma once
 
 // Tiling-break sampling for the landscape material. Included from Custom nodes as
-// /MobMasterMaterial/Public/MobLandscapeBombing.ush.
+// /MobMaterials/Public/MobLandscapeBombing.ush.
 //
 // Four tiers, selected per layer by a static switch so the unused ones compile out:
 //   None  - one tap, straight sample
@@ -15,7 +15,7 @@
 // sample inside a Custom node would take its derivatives from the wrong place once UVs are
 // rotated or offset per cell.
 
-#include "/MobMasterMaterial/Public/MobMaterialUtil.ush"
+#include "/MobMaterials/Public/MobMaterialUtil.ush"
 
 // ---------------------------------------------------------------------------
 // Hash / rotation
