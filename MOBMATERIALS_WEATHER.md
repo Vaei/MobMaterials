@@ -107,7 +107,7 @@ Three things want setting for snow rather than mud:
 | | |
 |---|---|
 | `Trample_RoughnessTarget` | **0.9**. The default 0.35 is the mud case: wet, and smoother than its surroundings. Broken snow is rougher |
-| volume `FadeHalfLife` | **0**. Snow keeps prints until something covers them again |
+| volume `HoldSeconds` | **0**. Snow keeps prints until something covers them again |
 | `bTrampleWPO` | optional. The ground sinks into the print for real rather than only shading like it |
 
 **And it sounds like snow.** `UNQFootstepComponent` reads the same `Snow` value the material does and, where the surface faces up enough to hold a covering and nothing has walked it off yet, plays the snow footstep instead of the ground's own. Walk your own trail back and you hear the earth again. Nothing about that is authored twice: the audio reaches the same conclusion from the same three numbers the shader uses.
@@ -137,7 +137,7 @@ Everything above is a function of the surface itself, so it can be worked out pe
 
 1. Place an **AMobTrampleVolume** over the ground that should take prints. **Mat → Fit Selected Box Volume To Landscape** sizes it to the terrain, or set the box by hand for a smaller area.
 2. Point its **Mask** at a render target. Generating authors `RT_<Master>Trample` beside the master at 2048 square; duplicate it per area if two volumes need different resolutions.
-3. Point its **Collection**, **Stamp Material** and **Fade Material** at `MPC_MobTrample`, `M_MobTrampleStamp` and `M_MobTrampleFade`.
+3. Point its **Collection** and **Stamp Material** at `MPC_MobTrample` and `M_MobTrampleStamp`.
 4. On the material instance, set **Trample Mask** to the *same* render target, and turn `bTrample` on.
 5. Call `Add Trample` wherever a foot lands.
 
@@ -159,7 +159,9 @@ For anything that scrapes rather than steps, `Add Trample Trail` marks a line be
 | `Trample_NormalStrength` | how far the trench tilts the surface |
 | `Accumulation_TrampleErase` | how completely a print clears the covering |
 
-On the volume, `FadeHalfLife` is how long a print takes to lose half its depth. **Zero never fades**, which is what snow that settles once wants; a few seconds is right for wet mud that runs back in.
+On the volume, `HoldSeconds` is how long a print stays at full depth and `FadeSeconds` is how long it then takes to go. **`HoldSeconds` at zero never fades at all**, which is what snow that settles once wants; a few seconds each is right for wet mud that runs back in. Every print runs its own clock, so one left now goes on its own schedule rather than at whatever rate the oldest one is on.
+
+Set `Fade` to **Through Half** for ground that keeps a mark rather than losing it: the print drops to `HalfFadeAmount` of its depth over `HalfFadeSeconds`, sits there for `HoldHalfFadeSeconds`, and only then fades out over `FadeSeconds`. Soft earth that takes a deep print underfoot and then holds a shallow one, or snow that slumps without filling in.
 
 ### Geometry
 

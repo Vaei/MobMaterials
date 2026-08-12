@@ -12,6 +12,17 @@ class UMaterialInterface;
 class UMaterialParameterCollection;
 class UTextureRenderTarget2D;
 
+/** How a print gets from full depth to nothing. */
+UENUM(BlueprintType)
+enum class EMobTrampleFade : uint8
+{
+	/** Held at full depth, then away. */
+	Straight,
+
+	/** Held at full depth, then down to Half Fade Amount and held there, then away. */
+	ThroughHalf		UMETA(DisplayName="Through Half"),
+};
+
 /**
  * One print, and how long it has been there.
  *
@@ -90,6 +101,32 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Trample", meta=(ClampMin="0.0", ForceUnits="s"))
 	float HoldSeconds = 0.f;
+
+	/**
+	 * Whether it goes straight to nothing from there, or settles at a shallower depth first and
+	 * stays that way for a while.
+	 *
+	 * The half step is what ground that keeps a mark rather than losing it wants: soft earth that
+	 * takes a deep print underfoot and then holds a shallow one, or snow that a print sinks into
+	 * and then only slumps.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Trample", meta=(EditCondition="HoldSeconds > 0.0"))
+	EMobTrampleFade Fade = EMobTrampleFade::Straight;
+
+	/** How long the drop to the shallower depth takes. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Trample", meta=(ClampMin="0.0", ForceUnits="s",
+		EditCondition="HoldSeconds > 0.0 && Fade == EMobTrampleFade::ThroughHalf", EditConditionHides))
+	float HalfFadeSeconds = 4.f;
+
+	/** What depth it settles at, against the print's own. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Trample", meta=(ClampMin="0.0", ClampMax="1.0",
+		EditCondition="HoldSeconds > 0.0 && Fade == EMobTrampleFade::ThroughHalf", EditConditionHides))
+	float HalfFadeAmount = 0.5f;
+
+	/** How long it stays at that depth before it starts leaving. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Trample", meta=(ClampMin="0.0", ForceUnits="s",
+		EditCondition="HoldSeconds > 0.0 && Fade == EMobTrampleFade::ThroughHalf", EditConditionHides))
+	float HoldHalfFadeSeconds = 0.f;
 
 	/**
 	 * How long it then takes to disappear. Each print runs its own clock, so one left now fades on

@@ -136,17 +136,41 @@ float AMobTrampleVolume::StrengthOf(const FMobTrampleStamp& Mark) const
 		return Mark.Strength;
 	}
 
-	const float Fading = Mark.Age - HoldSeconds;
+	float Fading = Mark.Age - HoldSeconds;
 	if (Fading <= 0.f)
 	{
 		return Mark.Strength;
 	}
+
+	// Where the last fade starts from, which is the print's own depth unless it settled at a
+	// shallower one on the way.
+	float From = 1.f;
+	if (Fade == EMobTrampleFade::ThroughHalf)
+	{
+		const float Half = FMath::Clamp(HalfFadeAmount, 0.f, 1.f);
+		if (HalfFadeSeconds > 0.f)
+		{
+			if (Fading < HalfFadeSeconds)
+			{
+				return Mark.Strength * FMath::Lerp(1.f, Half, Fading / HalfFadeSeconds);
+			}
+			Fading -= HalfFadeSeconds;
+		}
+
+		if (Fading < HoldHalfFadeSeconds)
+		{
+			return Mark.Strength * Half;
+		}
+		Fading -= HoldHalfFadeSeconds;
+		From = Half;
+	}
+
 	if (FadeSeconds <= 0.f)
 	{
 		return 0.f;
 	}
 
-	return Mark.Strength * FMath::Max(1.f - Fading / FadeSeconds, 0.f);
+	return Mark.Strength * From * FMath::Max(1.f - Fading / FadeSeconds, 0.f);
 }
 
 void AMobTrampleVolume::StampMirror(const FVector& WorldLocation, float Radius, float Strength)
@@ -265,13 +289,16 @@ void AMobTrampleVolume::FlushNow(float Elapsed)
 	bool bAnyFading = false;
 	for (int32 i = Marks.Num() - 1; i >= 0; --i)
 	{
+		const float Was = StrengthOf(Marks[i]);
 		Marks[i].Age += Elapsed;
-		if (StrengthOf(Marks[i]) <= 1.f / 255.f)
+		const float Now = StrengthOf(Marks[i]);
+
+		if (Now <= 1.f / 255.f)
 		{
 			Marks.RemoveAt(i);
 			bAnyFading = true;
 		}
-		else if (HoldSeconds > 0.f && Marks[i].Age > HoldSeconds)
+		else if (!FMath::IsNearlyEqual(Was, Now))
 		{
 			bAnyFading = true;
 		}
