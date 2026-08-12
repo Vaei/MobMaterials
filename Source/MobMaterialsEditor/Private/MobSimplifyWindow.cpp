@@ -12,6 +12,7 @@
 #include "Dom/JsonObject.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Notifications/NotificationManager.h"
+#include "Misc/MessageDialog.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -58,6 +59,40 @@ namespace
 	void Rebuild(UMaterialInstanceConstant& Instance)
 	{
 		UMaterialEditingLibrary::UpdateMaterialInstance(&Instance);
+	}
+
+	/** Every parameter Simplify writes, across the layers an instance carries. */
+	TSet<FName> SimplifiedNames(const TArray<FName>& Layers)
+	{
+		TSet<FName> Names;
+		for (const FName& Layer : Layers)
+		{
+			const FString Name = Layer.ToString();
+			Names.Add(FName(*(Name + TEXT("_Amount"))));
+			Names.Add(FName(*(Name + TEXT("_SlopeAmount"))));
+			Names.Add(FName(*(Name + TEXT("_AltitudeAmount"))));
+			Names.Add(FName(*(Name + UVScale)));
+
+			for (const TCHAR* Suffix : TilingSwitches)
+			{
+				Names.Add(FName(*(Name + Suffix)));
+			}
+			for (const TPair<const TCHAR*, float>& Grade : GradeNeutral)
+			{
+				Names.Add(FName(*(Name + Grade.Key)));
+			}
+			for (const TCHAR* Suffix : LayerTextures)
+			{
+				Names.Add(FName(*(Name + Suffix)));
+			}
+		}
+
+		for (const TCHAR* Name : OverlayAmounts)
+		{
+			Names.Add(FName(Name));
+		}
+
+		return Names;
 	}
 
 	/** Records a value before it is written over, once. Later writes to the same name are ignored. */
@@ -318,6 +353,56 @@ bool FMobSimplifyWindow::Restore(UMobSimplifyOptions& Options, FText& OutError)
 	return true;
 }
 
+bool FMobSimplifyWindow::Reset(UMobSimplifyOptions& Options, FText& OutError)
+{
+	UMaterialInstanceConstant* Instance = Options.MaterialInstance;
+	if (!Instance)
+	{
+		OutError = LOCTEXT("ResetNoInstance", "Pick the material instance to reset.");
+		return false;
+	}
+
+	const TArray<FName> Layers = LayerNames(Instance);
+	if (Layers.Num() == 0)
+	{
+		OutError = LOCTEXT("ResetNoLayers",
+			"That instance has no layers, so it is not one of these landscape masters.");
+		return false;
+	}
+
+	const TSet<FName> Names = SimplifiedNames(Layers);
+	auto Simplified = [&Names](const auto& Value) { return Names.Contains(Value.ParameterInfo.Name); };
+
+	if (GEditor)
+	{
+		GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->CloseAllEditorsForAsset(Instance);
+	}
+
+	const FScopedTransaction Transaction(LOCTEXT("ResetTransaction", "Reset Material To Parent"));
+	Instance->Modify();
+
+	int32 Cleared = Instance->ScalarParameterValues.RemoveAll(Simplified);
+	Cleared += Instance->TextureParameterValues.RemoveAll(Simplified);
+
+	FStaticParameterSet Statics = Instance->GetStaticParameters();
+	Cleared += Statics.StaticSwitchParameters.RemoveAll(Simplified);
+	Instance->UpdateStaticPermutation(Statics);
+
+	Options.Snapshots.Remove(FSoftObjectPath(Instance).ToString());
+	Options.SaveConfig();
+
+	Rebuild(*Instance);
+
+	if (Cleared == 0)
+	{
+		OutError = LOCTEXT("ResetNothing",
+			"That instance holds none of these parameters itself, so it already reads as its parent does.");
+		return false;
+	}
+
+	return true;
+}
+
 FText FMobSimplifyWindow::Summary(const UMobSimplifyOptions& Options)
 {
 	if (!Options.MaterialInstance)
@@ -335,6 +420,23 @@ FText FMobSimplifyWindow::Summary(const UMobSimplifyOptions& Options)
 	return FText::Format(LOCTEXT("SimplifySummary",
 		"{0} layer(s). Everything not named is turned off, and what is turned off is recorded so it "
 		"can be put back."), FText::AsNumber(Layers.Num()));
+}
+
+void FMobSimplifyWindow::OpenFor(UMaterialInstanceConstant* Instance, FName Layer)
+{
+	UMobSimplifyOptions* Options = GetMutableDefault<UMobSimplifyOptions>();
+	if (Instance)
+	{
+		Options->MaterialInstance = Instance;
+	}
+	if (LayerNames(Options->MaterialInstance).Contains(Layer))
+	{
+		Options->Layer = Layer;
+	}
+
+	// The window fills itself from these, and the Content Browser pass in Open would overwrite the
+	// instance the caller just named.
+	Build();
 }
 
 void FMobSimplifyWindow::Open()
@@ -359,6 +461,13 @@ void FMobSimplifyWindow::Open()
 	{
 		Options->Layer = Layers[0];
 	}
+
+	Build();
+}
+
+void FMobSimplifyWindow::Build()
+{
+	UMobSimplifyOptions* Options = GetMutableDefault<UMobSimplifyOptions>();
 
 	FDetailsViewArgs Args;
 	Args.bAllowSearch = false;
@@ -390,7 +499,8 @@ void FMobSimplifyWindow::Open()
 			.Text(LOCTEXT("SimplifyHelp",
 				"Turns the material down to one layer, so what is on screen is that layer's art and "
 				"nothing else. Everything it changes is recorded first, and Restore puts back exactly "
-				"what was there rather than the master's defaults."))
+				"what was there rather than the master's defaults. Reset is the way out when there is no "
+				"recording: it drops this instance's value for each of them and the parent's comes back."))
 		]
 
 		+ SVerticalBox::Slot()
@@ -471,6 +581,49 @@ void FMobSimplifyWindow::Open()
 							if (Restore(*Options, Error))
 							{
 								NotifySimplify(LOCTEXT("RestoreDone", "Material restored."), true);
+
+								if (const TSharedPtr<SWindow> Pinned = WeakWindow.Pin())
+								{
+									Pinned->RequestDestroyWindow();
+								}
+							}
+							else
+							{
+								NotifySimplify(Error, false);
+							}
+							return FReply::Handled();
+						})
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(0.f, 0.f, 8.f, 0.f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("SimplifyReset", "Reset"))
+						.ToolTipText(LOCTEXT("SimplifyResetTip",
+							"Drops this instance's own value for everything Simplify writes, so each reads as "
+							"the parent gives it. Use it when there is no recording to restore. Layer weights, "
+							"tiling, grade and the layer textures set on this instance go with it."))
+						.IsEnabled_Lambda([Options]
+						{
+							return LayerNames(Options->MaterialInstance).Num() > 0;
+						})
+						.OnClicked_Lambda([Options, WeakWindow]
+						{
+							if (FMessageDialog::Open(EAppMsgType::YesNo, LOCTEXT("ResetConfirm",
+								"Reset every parameter Simplify writes back to the parent's value?\n\n"
+								"This instance's own layer weights, tiling, grade and layer textures are "
+								"dropped, and that cannot be undone from the recorded state."))
+								!= EAppReturnType::Yes)
+							{
+								return FReply::Handled();
+							}
+
+							FText Error;
+							if (Reset(*Options, Error))
+							{
+								NotifySimplify(LOCTEXT("ResetDone", "Material reset to its parent."), true);
 
 								if (const TSharedPtr<SWindow> Pinned = WeakWindow.Pin())
 								{

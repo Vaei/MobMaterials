@@ -68,12 +68,21 @@ class FMobSimplifyWindow
 public:
 	static void Open();
 
+	/** Opens on a particular instance and layer, for whoever already knows which they mean. */
+	static void OpenFor(UMaterialInstanceConstant* Instance, FName Layer);
+
 	/** Whether the given instance has something to put back. */
 	static bool HasSnapshot(const UMaterialInstanceConstant* Instance);
 
 private:
+	/** The window itself, once the options say what it is for. */
+	static void Build();
+
 	static bool Simplify(UMobSimplifyOptions& Options, FText& OutError);
 	static bool Restore(UMobSimplifyOptions& Options, FText& OutError);
+
+	/** Drops the instance's own value for everything Simplify writes, so the parent's comes back. */
+	static bool Reset(UMobSimplifyOptions& Options, FText& OutError);
 
 	/** The layer names an instance carries, taken from its `<Layer>_UVScale` parameters. */
 	static TArray<FName> LayerNames(const UMaterialInstanceConstant* Instance);

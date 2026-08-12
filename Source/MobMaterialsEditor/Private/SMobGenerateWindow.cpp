@@ -1,6 +1,7 @@
 // Copyright (c) Jared Taylor
 
 #include "SMobGenerateWindow.h"
+#include "MobLevelTools.h"
 
 #include "IDetailsView.h"
 #include "IPythonScriptPlugin.h"
@@ -326,8 +327,19 @@ bool SMobGenerateWindow::Generate(UMobMaterialRecipe* Recipe)
 	const TCHAR* Module = Recipe->Kind == EMobMaterialKind::Landscape
 		? TEXT("author_landscape") : TEXT("author_surface");
 
-	return RunGenerator(Recipe, Module, TEXT("build_all"),
+	const bool bBuilt = RunGenerator(Recipe, Module, TEXT("build_all"),
 		FText::Format(LOCTEXT("GenDone", "Mat: authored M_{0}."), FText::FromString(Recipe->AssetName)));
+
+	// What the ground reports underfoot is baked into collision data, not read per trace, so a
+	// regenerated master says something new and every footstep keeps hearing the old answer until
+	// this runs. It is the step that gets forgotten, so it is not a step.
+	if (bBuilt && Recipe->Kind == EMobMaterialKind::Landscape
+		&& FMobLevelTools::CanRebuildPhysicalMaterial())
+	{
+		FMobLevelTools::RebuildPhysicalMaterial();
+	}
+
+	return bBuilt;
 }
 
 bool SMobGenerateWindow::CreateTestLevel(UMobMaterialRecipe* Recipe)

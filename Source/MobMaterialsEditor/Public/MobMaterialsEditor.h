@@ -44,6 +44,12 @@ private:
 
 	/** Opens a weather collection so its wetness can be scrubbed without hunting for the asset. */
 	static void OpenWeatherCollection(FSoftObjectPath Path);
+
+	/** Opens whatever is at a path in its own editor. */
+	static void OpenAsset(FSoftObjectPath Path);
+
+	/** The landscape's instance, in the layer editor, or the stock one when shift is held. */
+	static void OpenLandscapeInstance();
 	static bool WeatherCollectionExists(FSoftObjectPath Path);
 
 	/** Python is only needed to generate; a material already authored works without it. */

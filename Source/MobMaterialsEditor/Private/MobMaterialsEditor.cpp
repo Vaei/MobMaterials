@@ -4,13 +4,19 @@
 
 #include "MobChannelRemapWindow.h"
 #include "MobLevelTools.h"
+#include "Materials/MaterialInstanceConstant.h"
+#include "Materials/MaterialInterface.h"
 #include "MobMaterialsEditorStyle.h"
 #include "MobSimplifyWindow.h"
+#include "MobTrampleVolumeCustomization.h"
+#include "SMobLayerEditor.h"
 #include "MobMaterialsEditorUserSettings.h"
 #include "MobUVScaleWindow.h"
 #include "SMobGenerateWindow.h"
 
 #include "ISettingsModule.h"
+#include "PropertyEditorModule.h"
+#include "MobTrampleVolume.h"
 
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -24,6 +30,7 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "Styling/AppStyle.h"
+#include "Framework/Application/SlateApplication.h"
 #include "ToolMenus.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -32,6 +39,11 @@
 void FMobMaterialsEditorModule::StartupModule()
 {
 	FMobMaterialsEditorStyle::Register();
+
+	FPropertyEditorModule& PropertyEditor =
+		FModuleManager::LoadModuleChecked<FPropertyEditorModule>(TEXT("PropertyEditor"));
+	PropertyEditor.RegisterCustomClassLayout(AMobTrampleVolume::StaticClass()->GetFName(),
+		FOnGetDetailCustomizationInstance::CreateStatic(&FMobTrampleVolumeCustomization::MakeInstance));
 
 	if (UToolMenus::IsToolMenuUIEnabled())
 	{
@@ -42,6 +54,12 @@ void FMobMaterialsEditorModule::StartupModule()
 
 void FMobMaterialsEditorModule::ShutdownModule()
 {
+	if (FPropertyEditorModule* PropertyEditor =
+		FModuleManager::GetModulePtr<FPropertyEditorModule>(TEXT("PropertyEditor")))
+	{
+		PropertyEditor->UnregisterCustomClassLayout(TEXT("MobTrampleVolume"));
+	}
+
 	UToolMenus::UnRegisterStartupCallback(this);
 	UToolMenus::UnregisterOwner(this);
 	FMobMaterialsEditorStyle::Unregister();
@@ -151,7 +169,7 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 		{
 			continue;
 		}
-		if (Recipe->Kind == EMobMaterialKind::Surface && !Recipe->WeatherCollection.IsNull())
+		if (!Recipe->WeatherCollection.IsNull())
 		{
 			Collections.AddUnique(Recipe->WeatherCollection.ToSoftObjectPath());
 		}
@@ -178,6 +196,23 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 				FUIAction(FExecuteAction::CreateStatic(
 					&FMobMaterialsEditorModule::PackLayerArrays, Path)));
 		}
+		Menu.EndSection();
+	}
+
+	if (UMaterialInstanceConstant* Instance = FMobLevelTools::GetLandscapeInstance())
+	{
+		Menu.BeginSection(TEXT("MobLandscapeMaterial"), LOCTEXT("LandscapeMaterialSection", "This Landscape"));
+		Menu.AddMenuEntry(
+			FText::Format(LOCTEXT("OpenLandscapeMI", "Open {0}"),
+				FText::FromString(Instance->GetName())),
+			LOCTEXT("OpenLandscapeMITip",
+				"Opens the material instance the landscape in this level renders with. Every layer's "
+				"textures and every dial live here, and finding it otherwise means selecting a proxy "
+				"and reading a property off it."),
+			FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.MaterialInstanceConstant")),
+			FUIAction(FExecuteAction::CreateStatic(
+				&FMobMaterialsEditorModule::OpenLandscapeInstance)));
+
 		Menu.EndSection();
 	}
 
@@ -226,6 +261,15 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 
 	Menu.BeginSection(TEXT("MobTextures"), LOCTEXT("TexturesSection", "Textures"));
 	Menu.AddMenuEntry(
+		LOCTEXT("LayerEditor", "Edit Layers..."),
+		LOCTEXT("LayerEditorTip",
+			"A material instance editor that stays where you left it. Groups become tabs, so a layer "
+			"is a tab, and a value written while scrubbing does not rebuild the panel under the "
+			"cursor. Opens on the Content Browser selection, or the open level's landscape."),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("LevelEditor.Tabs.Layers")),
+		FUIAction(FExecuteAction::CreateStatic(&SMobLayerEditor::Open)));
+
+	Menu.AddMenuEntry(
 		LOCTEXT("FitUVScale", "Fit UV Scale To Landscape..."),
 		LOCTEXT("FitUVScaleTip",
 			"Works out every layer's UVScale from the landscape's own quad size, so a tile measures what "
@@ -239,7 +283,8 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 		LOCTEXT("SimplifyTip",
 			"Turns a landscape material down to one layer so what is on screen is that layer's art and "
 			"nothing else - no other layers, no tiling break, no slope rock, moss or wetness. Everything "
-			"it changes is recorded, and Restore in the same window puts it all back."),
+			"it changes is recorded, and Restore in the same window puts it all back. Reset takes those "
+			"same parameters to the parent's values when there is no recording left to put back."),
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Filter")),
 		FUIAction(FExecuteAction::CreateStatic(&FMobSimplifyWindow::Open)));
 
@@ -287,6 +332,30 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 		FUIAction(
 			FExecuteAction::CreateStatic(&FMobLevelTools::FitBoxToLandscape),
 			FCanExecuteAction::CreateStatic(&FMobLevelTools::CanFitBoxToLandscape)));
+
+	Menu.AddMenuEntry(
+		LOCTEXT("RebuildPhysMat", "Rebake Landscape Physical Materials"),
+		Reason(LOCTEXT("RebuildPhysMatTip",
+			"Rebakes which physical material the ground reports underfoot. The material's physical "
+			"material output is baked into collision data rather than read per trace, so a "
+			"regenerated master changes nothing about what a footstep hears until this runs."),
+			&FMobLevelTools::RebuildReason),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Refresh")),
+		FUIAction(
+			FExecuteAction::CreateStatic(&FMobLevelTools::RebuildPhysicalMaterial),
+			FCanExecuteAction::CreateStatic(&FMobLevelTools::CanRebuildPhysicalMaterial)));
+
+	Menu.AddMenuEntry(
+		LOCTEXT("AssignTextures", "Assign Selected Textures To Landscape"),
+		Reason(LOCTEXT("AssignTexturesTip",
+			"Assigns the textures selected in the Content Browser to the landscape's material "
+			"instance, matched by name: T_DryGrass_BaseColor lands on DryGrass_BC. All or nothing, "
+			"so a set with one name it cannot place changes nothing."),
+			&FMobLevelTools::AssignReason),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.Texture2D")),
+		FUIAction(
+			FExecuteAction::CreateStatic(&FMobLevelTools::AssignSelectedTextures),
+			FCanExecuteAction::CreateStatic(&FMobLevelTools::CanAssignSelectedTextures)));
 	Menu.EndSection();
 
 	Menu.BeginSection(TEXT("MobSettings"), LOCTEXT("SettingsSection", "Settings"));
@@ -428,6 +497,27 @@ bool FMobMaterialsEditorModule::WeatherCollectionExists(FSoftObjectPath Path)
 {
 	// The collection is authored by the generator, so before a first run it will not be there yet.
 	return FPackageName::DoesPackageExist(Path.GetLongPackageName());
+}
+
+void FMobMaterialsEditorModule::OpenAsset(FSoftObjectPath Path)
+{
+	OpenWeatherCollection(Path);
+}
+
+void FMobMaterialsEditorModule::OpenLandscapeInstance()
+{
+	// The stock editor rebuilds its whole tree on every change, so it is the exception rather than
+	// the route: shift asks for it, everything else gets the one that stays put.
+	if (FSlateApplication::Get().GetModifierKeys().IsShiftDown())
+	{
+		if (UMaterialInstanceConstant* Instance = FMobLevelTools::GetLandscapeInstance())
+		{
+			OpenAsset(FSoftObjectPath(Instance));
+		}
+		return;
+	}
+
+	SMobLayerEditor::Open();
 }
 
 void FMobMaterialsEditorModule::OpenWeatherCollection(FSoftObjectPath Path)

@@ -29,6 +29,12 @@ enum class EMobRemapTarget : uint8
 	/** Cavity, Roughness, Metallic. What a surface or foliage material reads. */
 	CRM		UMETA(DisplayName = "CRM (surface, foliage)"),
 
+	/**
+	 * Metallic, Roughness, Ambient Occlusion. Nothing here reads it - the masters take cavity, not
+	 * occlusion - but repacking art into it for something else is the same job this already does.
+	 */
+	MRAO	UMETA(DisplayName = "MRAO (not read by these materials)"),
+
 	/** Whatever the three slots are set to. Named by hand. */
 	Custom	UMETA(DisplayName = "Custom"),
 };

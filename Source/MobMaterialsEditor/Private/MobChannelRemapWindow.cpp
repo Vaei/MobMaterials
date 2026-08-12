@@ -150,6 +150,15 @@ void UMobChannelRemapOptions::ApplyPreset()
 		bCavityFromOcclusion = true;
 	}
 
+	if (Target == EMobRemapTarget::MRAO)
+	{
+		// The one target that genuinely wants occlusion, because nothing here is going to read it.
+		Red = Slot(Metal, MetalChannel, 0.f);
+		Blue = Slot(Occlusion, OcclusionChannel, 1.f);
+		bCavityFromOcclusion = false;
+		return;
+	}
+
 	if (Target == EMobRemapTarget::HRC)
 	{
 		// No common packed layout carries height at all, so it stays a constant unless given a map.
@@ -205,6 +214,7 @@ FString FMobChannelRemapWindow::TargetSuffix(EMobRemapTarget Target)
 	{
 	case EMobRemapTarget::HRC:	return TEXT("HRC");
 	case EMobRemapTarget::CRM:	return TEXT("CRM");
+	case EMobRemapTarget::MRAO:	return TEXT("MRAO");
 	default:					return TEXT("Packed");
 	}
 }

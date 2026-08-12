@@ -35,8 +35,11 @@ public class MobMaterialsEditor : ModuleRules
 				"AssetRegistry",
 				"ImageCore",
 				"Landscape",
+				"RHI",
+				"RenderCore",
 				"MaterialEditor",
 				"Json",
+				"AppFramework",
 			}
 			);
 	}
