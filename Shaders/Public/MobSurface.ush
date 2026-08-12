@@ -364,36 +364,6 @@ float3 MobWind(float3 WorldPos, float3 ObjectPos, float3 Direction, float Time,
 }
 
 // ---------------------------------------------------------------------------
-// Accumulation
-// ---------------------------------------------------------------------------
-
-/**
- * How much of something settles here: snow on a ledge, dust on a shelf, ash on a sill.
- *
- * Driven by which way the surface faces, because that is what actually decides it - snow does not
- * cling to a wall. Cavity biases it into the crevices, which is where a thin covering starts and
- * the last of it survives, and the noise stops the line between covered and bare reading as a
- * threshold.
- */
-float MobAccumulation(float WorldNormalZ, float Cavity, float Noise, float Amount,
-	float Facing, float CavityBias, float NoiseAmount)
-{
-	const float Up = smoothstep(saturate(Facing), 1.0f, WorldNormalZ);
-	const float Crevice = lerp(1.0f, saturate(1.0f - Cavity), saturate(CavityBias));
-	const float Broken = lerp(1.0f, saturate(Noise * 2.0f), saturate(NoiseAmount));
-	return saturate(Amount * Up * Crevice * Broken);
-}
-
-/** Lays the covering over the surface: its own colour, its own roughness, its normal flattened toward it. */
-float3 MobApplyAccumulation(float3 BaseColor, float3 Normal, float Roughness, float3 Colour,
-	float CoverRoughness, float Mask, out float3 OutNormal, out float OutRoughness)
-{
-	OutNormal = MobFlattenNormal(Normal, Mask);
-	OutRoughness = lerp(Roughness, CoverRoughness, Mask);
-	return lerp(BaseColor, Colour, Mask);
-}
-
-// ---------------------------------------------------------------------------
 // Rain
 // ---------------------------------------------------------------------------
 

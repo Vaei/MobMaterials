@@ -73,11 +73,14 @@ UE5.8+
 - **Parallax, cheap or raymarched.** One-step offset sells brick and cobbles for a multiply and an add; occlusion walks the height field when a hero surface earns it
 - **Per-instance tint, roughness and wetness from custom primitive data**, so one material instance serves a thousand actors that all differ, with no new permutations and nothing to author per actor
 - **Foliage with wind** - masked, two-sided, light through the leaf, and two scales of motion weighted so the base stays planted and the tips move
+- **Snow, from one number.** Drag `Snow` 0 to 1 and it settles across the world by which way each surface faces, starting in the crevices and covering the flats last. Terrain, props and roofs all follow the same value, and none of it costs a texture sample
+- **Footprints through it that clear back to the ground**, darkening, roughening and denting what they cross, from one render target a volume draws into. The terrain can sink into them for real - one vertex tap, opt in
+- **And they sound right.** A step on fresh snow plays snow; a step in your own trail plays the earth you uncovered. The audio reaches that from the same three numbers the shader does, so nothing is authored twice
 - **Debug views** for layer weights, cavity, wetness and height, because a blend you cannot see is a blend you cannot fix
 
 ### Built for the mobile forward path
 
-- **4 samplers in every permutation.** Every sample is Shared:Wrap, so the 16-sampler limit never binds however many layers are on
+- **4 samplers however many layers are on.** Every layer sample is Shared:Wrap, so the 16-sampler limit never binds. Only trample and parallax occlusion ever spend a fifth
 - **Sub-pixel detail is removed with distance**, because specular that fine crawls without a temporal filter and FXAA cannot save it
 - **Cavity, never ambient occlusion.** Micro shadowing multiplies base colour and specular; the AO pin stays free so it cannot double with the renderer's own occlusion
 - **A disabled feature is not compiled.** Its texture samples and its maths leave the shader entirely, rather than being multiplied by zero
@@ -156,12 +159,14 @@ Every recipe in the project also appears directly on the **Mat** menu, so regene
 | **Verify Contract** | asserts what each master claims to cost - taps and samplers per feature, the ambient occlusion pin left free, primitive data indices unmoved. Results in the Output Log |
 | **Report Cost** | how many distinct shader maps the instances add up to, and how much texture each master keeps resident |
 | **Pack Layers for \<Recipe\>** | packs a landscape recipe's layer textures into the arrays its master samples. Only listed for recipes using them |
-| **Simplify Material To Layer...** | turns a landscape material down to one layer so what is on screen is that layer's art and nothing else. Everything it changes is recorded, and Restore in the same window puts it back exactly. For working through layers one at a time before the whole set exists |
+| **Simplify Material To Layer...** | turns a landscape material down to one layer so what is on screen is that layer's art and nothing else. Everything it changes is recorded, and Restore in the same window puts it back exactly. Reset takes those same parameters to the parent's values, which is the way out when the recording is gone. For working through layers one at a time before the whole set exists |
 | **Fit UV Scale To Landscape...** | reads the landscape's own quad size and writes every layer's `UVScale` so a tile measures the metres you asked for. A resized landscape does not have the quads the defaults assume, and then every layer tiles wrongly at once |
 | **Remap Texture Channels...** | repacks incoming art into the HRC a landscape layer reads or the CRM a surface reads. Common layouts are presets; anything else is three slots you set yourself |
 | **Snap Selected Actor To Landscape Centre** | drops the selection in the middle of the nearest landscape, sitting on the surface. Where a test mesh wants to be, and otherwise three numbers to work out by hand |
 | **Fit Selected Box Volume To Landscape** | centres and scales the selected volume to cover the nearest landscape exactly, streaming proxies included. Clears its rotation, since a turned box cannot be scaled to cover an axis aligned one |
-| **Open MPC_MobWeather** | straight to the wetness dial |
+| **Rebake Landscape Physical Materials** | rebakes which physical material the ground reports underfoot. The physical material output is baked into collision data rather than read per trace, so a regenerated master changes nothing about what a footstep hears until this runs. Leaves the mobile preview first, because the landscape refuses to bake below SM5. Save the level afterwards |
+| **Open \<MI\>, Open \<Master\>** | the material instance the open level's landscape renders with, and the master behind it. Otherwise it is select a proxy, read a property, hunt in the Content Browser |
+| **Open MPC_MobWeather** | straight to the wetness and snowfall dials |
 | **Editor Preferences** | per-developer settings, not checked in |
 | **Hide This Menu** | takes the Mat button off your toolbar. Turn it back on under Editor Preferences, Plugins, Mob Materials Editor |
 
@@ -191,7 +196,7 @@ Start from whichever preset is closest instead of turning switches on yourself -
 
 To make it rain, set `Wetness` on the recipe's weather collection from Blueprint or code. Point several recipes at one collection and their materials go wet together.
 
-**Mob → Open MPC_MobWeather** goes straight to it: drag `Wetness` 0 to 1 and every instance with wetness on follows, live in the viewport. The menu lists every collection the surface recipes name.
+**Mob → Open MPC_MobWeather** goes straight to it: drag `Wetness` 0 to 1 and every instance with wetness on follows, live in the viewport. The menu lists every collection any recipe names.
 
 > [!NOTE]
 > **You do not have to fill a mesh with black before painting.** Most layered materials read vertex colour straight, which means every layer at full weight.
@@ -230,6 +235,10 @@ It opens a new level, so it asks first.
 ### Runtime virtual texture, footsteps, grass
 
 These reference assets a game owns, so they are off until asked for. Tick **Build Project Outputs** on a landscape recipe and set the four paths beneath it. That adds the RVT output and sample, the footstep physical material output and the grass output to the master, and authors `MF_<AssetName>RVTBlend` for fading meshes into the terrain.
+
+### Footprints
+
+Place an **AMobTrampleVolume** over the ground, point it at the generated `RT_<AssetName>Trample`, `MPC_MobTrample` and the two stamp materials, set the same render target on the instance's `TrampleMask`, and call `Add Trample` from wherever a foot lands. Full walkthrough in [`MOBMATERIALS_WEATHER.md`](./MOBMATERIALS_WEATHER.md#trample).
 
 ---
 

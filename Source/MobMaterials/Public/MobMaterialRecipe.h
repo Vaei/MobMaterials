@@ -208,6 +208,43 @@ public:
 	bool bLandscapeDebugViews = true;
 
 	/**
+	 * Adds accumulation to the landscape master: snow, dust or ash settling by which way the ground
+	 * faces, biased into the crevices and broken up by noise.
+	 *
+	 * No extra samples - it reuses the blended cavity and the surface normal. A paint layer is
+	 * still the better answer where snow needs to drift in a particular place; this is for a fall
+	 * that covers everything at once and can be driven from nothing but a number.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Landscape",
+		meta=(EditCondition="Kind == EMobMaterialKind::Landscape", EditConditionHides))
+	bool bLandscapeAccumulation = true;
+
+	/**
+	 * Adds trample: a world-space record of what has been walked through, darkening and denting the
+	 * ground where it has and taking the accumulation back off it.
+	 *
+	 * Three extra samples of one render target, sharing the clamp sampler. What writes the target is
+	 * AMobTrampleVolume plus UMobTrampleSubsystem::AddTrample, so nothing happens until a volume is
+	 * placed and something calls it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather")
+	bool bTrample = true;
+
+	/**
+	 * Parameter collection carrying the trample volume's position and size.
+	 *
+	 * The volume writes it at runtime, which is what lets one render target asset be read by a
+	 * landscape material without anything in the chain being a dynamic material instance.
+	 *
+	 * Every master that should take prints from one volume has to name the same collection: a
+	 * volume writes one, so terrain and the props standing on it reading different ones means only
+	 * one of them gets prints. Leave it empty and generating uses the plugin's, then fills this in.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather",
+		meta=(EditCondition="bTrample", EditConditionHides))
+	TSoftObjectPtr<UMaterialParameterCollection> TrampleCollection;
+
+	/**
 	 * Samples the paint layers out of three texture arrays instead of three textures per layer.
 	 *
 	 * Texture count stops growing with layer count: eight layers is three texture objects rather
@@ -235,13 +272,14 @@ public:
 	FDirectoryPath LayerTextureRoot;
 
 	/**
-	 * Parameter collection carrying the global wetness the surface master reads.
+	 * Parameter collection carrying the weather both masters read: wetness, and how much snow, dust
+	 * or ash has fallen.
 	 *
-	 * Point several recipes at one collection and their materials go wet together. Leave it empty
-	 * and generating creates one beside the master, then fills this in.
+	 * Point every recipe at one collection and the whole world goes wet and gets covered together,
+	 * which is the only way terrain and the props standing on it agree. Leave it empty and
+	 * generating creates one beside the master, then fills this in.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
-		meta=(EditCondition="Kind == EMobMaterialKind::Surface", EditConditionHides))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather")
 	TSoftObjectPtr<UMaterialParameterCollection> WeatherCollection;
 
 	/** Whether there is enough here to author anything. */

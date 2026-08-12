@@ -200,12 +200,13 @@ float3 MobContrast(float3 Color, float Contrast, float Pivot)
  * the final image precisely when they are wrong, because a bad weight looks like a texture
  * choice. Sent to emissive by the caller so it survives the lighting.
  *
- *   1 layer weights, red green blue per layer   4 wetness
- *   2 cavity                                    5 height
- *   3 blended normal                            6 vertex colour, as painted
+ *   1 layer weights, red green blue per layer   5 height
+ *   2 cavity                                    6 vertex colour, as painted
+ *   3 blended normal                            7 trample
+ *   4 wetness                                   8 accumulation
  */
 float3 MobDebugView(int Mode, float3 Weights, float Cavity, float3 Normal, float Wetness,
-	float Height, float3 VertexColour)
+	float Height, float3 VertexColour, float Trample, float Accumulation)
 {
 	if (Mode == 1) { return saturate(Weights); }
 	if (Mode == 2) { return saturate(Cavity).xxx; }
@@ -213,7 +214,105 @@ float3 MobDebugView(int Mode, float3 Weights, float Cavity, float3 Normal, float
 	if (Mode == 4) { return float3(saturate(Wetness), 0.0f, 0.0f); }
 	if (Mode == 5) { return saturate(Height).xxx; }
 	if (Mode == 6) { return saturate(VertexColour); }
+	if (Mode == 7) { return float3(0.0f, saturate(Trample), 0.0f); }
+	if (Mode == 8) { return float3(0.0f, 0.0f, saturate(Accumulation)); }
 	return 0.0f.xxx;
+}
+
+// ---------------------------------------------------------------------------
+// Accumulation
+// ---------------------------------------------------------------------------
+
+/**
+ * How much of something settles here: snow on a ledge, dust on a shelf, ash on a sill.
+ *
+ * Driven by which way the surface faces, because that is what actually decides it - snow does not
+ * cling to a wall. Cavity biases it into the crevices, which is where a thin covering starts and
+ * the last of it survives, and the noise stops the line between covered and bare reading as a
+ * threshold.
+ */
+float MobAccumulation(float WorldNormalZ, float Cavity, float Noise, float Amount,
+	float Facing, float CavityBias, float NoiseAmount)
+{
+	const float Up = smoothstep(saturate(Facing), 1.0f, WorldNormalZ);
+	const float Crevice = lerp(1.0f, saturate(1.0f - Cavity), saturate(CavityBias));
+	const float Broken = lerp(1.0f, saturate(Noise * 2.0f), saturate(NoiseAmount));
+	return saturate(Amount * Up * Crevice * Broken);
+}
+
+/** Lays the covering over the surface: its own colour, its own roughness, its normal flattened toward it. */
+float3 MobApplyAccumulation(float3 BaseColor, float3 Normal, float Roughness, float3 Colour,
+	float CoverRoughness, float Mask, out float3 OutNormal, out float OutRoughness)
+{
+	OutNormal = MobFlattenNormal(Normal, Mask);
+	OutRoughness = lerp(Roughness, CoverRoughness, Mask);
+	return lerp(BaseColor, Colour, Mask);
+}
+
+// ---------------------------------------------------------------------------
+// Trample
+// ---------------------------------------------------------------------------
+//
+// A world-space record of what has been walked through, drawn into a render target by
+// UMobTrampleSubsystem and read back here. It is projected straight down the world Z axis, so the
+// coordinate is world XY within a volume's footprint and nothing about it is per mesh.
+//
+// The taps happen in TextureSample nodes like everywhere else. These take the coordinate and the
+// three already-sampled values.
+
+/** Where a world position lands in the trample texture, and how far inside the volume it is. */
+float2 MobTrampleUV(float3 WorldPos, float3 Centre, float2 Extent, out float Inside)
+{
+	const float2 Local = (WorldPos.xy - Centre.xy) / max(Extent, float2(MOB_EPS, MOB_EPS));
+
+	// Faded over the outermost tenth, or the edge of the volume is a straight line across the ground.
+	const float2 Edge = saturate((1.0f - abs(Local)) * 10.0f);
+	Inside = Edge.x * Edge.y;
+
+	return Local * 0.5f + 0.5f;
+}
+
+/**
+ * Depth and slope of the trench at a point, from the tap at that point and one texel along each axis.
+ *
+ * The slope has to come from neighbouring texels rather than from ddx/ddy: a screen-space
+ * derivative of a world-projected mask changes with the camera, and the trench would slide across
+ * the ground as you turned.
+ */
+float MobTrampleDepth(float Centre, float AlongX, float AlongY, float Inside, float Depth,
+	float TexelWorldSize, out float2 OutGradient)
+{
+	const float Scale = Depth * saturate(Inside);
+	OutGradient = float2(AlongX - Centre, AlongY - Centre) * Scale / max(TexelWorldSize, MOB_EPS);
+	return saturate(Centre) * saturate(Inside);
+}
+
+/**
+ * Tilts a tangent normal by a world-space gradient.
+ *
+ * Routed through world space rather than perturbing the tangent normal in place, because the mask
+ * is projected down the world Z axis and knows nothing about how the surface it lands on is wound.
+ * On a landscape the two would be nearly the same; on an arbitrary mesh they are not.
+ */
+float3 MobTrampleNormal(float3 TangentNormal, float2 Gradient, float Strength, float3x3 TangentToWorld)
+{
+	float3 WorldN = normalize(mul(TangentNormal, TangentToWorld));
+	WorldN = normalize(WorldN + float3(-Gradient.x, -Gradient.y, 0.0f) * Strength);
+	return normalize(mul(TangentToWorld, WorldN));
+}
+
+/**
+ * What a trampled surface looks like. Roughness goes wherever the artist points it: broken mud is
+ * wetter and so smoother, broken snow is rougher, and the same parameter says both.
+ */
+float3 MobApplyTrample(float3 BaseColor, float3 Normal, float Roughness, float2 Gradient, float Mask,
+	float Darkening, float RoughnessTarget, float NormalStrength, float3x3 TangentToWorld,
+	out float3 OutNormal, out float OutRoughness)
+{
+	const float M = saturate(Mask);
+	OutNormal = MobTrampleNormal(Normal, Gradient, NormalStrength * M, TangentToWorld);
+	OutRoughness = saturate(lerp(Roughness, RoughnessTarget, M));
+	return BaseColor * lerp(1.0f, Darkening, M);
 }
 
 // ---------------------------------------------------------------------------

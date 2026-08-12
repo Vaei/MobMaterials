@@ -35,4 +35,10 @@ enum class EMobDebugView : uint8
 
 	/** Vertex colour as painted. */
 	VertexColour = 6 UMETA(DisplayName = "Vertex Colour"),
+
+	/** Where the ground has been walked through, in green. Black wherever no volume covers it. */
+	Trample = 7,
+
+	/** Where snow, dust or ash has settled, in blue. */
+	Accumulation = 8,
 };

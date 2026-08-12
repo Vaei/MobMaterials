@@ -63,6 +63,47 @@ def _dir(recipe, name, default=''):
     return text or default
 
 
+def _collection(recipe, name):
+    """The path of a parameter collection property, without its object suffix.
+
+    The property resolves to the loaded collection, whose repr ends in its class name, so parsing
+    the string is a trap: ask the object for its path and drop the suffix.
+    """
+    try:
+        collection = recipe.get_editor_property(name)
+    except Exception:
+        return ''
+    if collection is None:
+        return ''
+    try:
+        path = str(collection.get_path_name())
+    except Exception:
+        try:
+            path = str(collection.to_soft_object_path().to_string())
+        except Exception:
+            return ''
+    return path.split('.')[0].strip()
+
+
+def _apply_weather(module, recipe):
+    """The collection carrying wetness and how much has fallen. Shared by both kinds of master."""
+    path = _collection(recipe, 'weather_collection')
+    # Unset: put one beside the master rather than in the plugin, and hand the recipe back so the
+    # generator can fill the field in once it has created it.
+    module.WEATHER_MPC = path or ('%s/MPC_%sWeather' % (module.ROOT, module.MASTER_NAME))
+    module.RECIPE = recipe
+
+
+def _apply_trample(module, recipe):
+    module.INCLUDE_TRAMPLE = bool(recipe.get_editor_property('trample'))
+
+    # Unset: the plugin's own, deliberately not one per master. A volume writes one collection, so
+    # the terrain and everything standing on it have to be reading the same one or only one of them
+    # gets prints. The generator hands the recipe back pointed at whichever it used.
+    module.TRAMPLE_MPC = _collection(recipe, 'trample_collection') or module.TRAMPLE_MPC
+    module.RECIPE = recipe
+
+
 def _apply_common(module, recipe):
     root = _dir(recipe, 'output_path', module.ROOT)
     module.ROOT = root
@@ -112,12 +153,20 @@ def apply_landscape(module, recipe):
     module.TEXTURE_ARRAYS = bool(recipe.get_editor_property('texture_array_layers'))
     module.LAYER_TEXTURE_ROOT = _dir(recipe, 'layer_texture_root', module.LAYER_TEXTURE_ROOT)
 
+    module.INCLUDE_ACCUMULATION = bool(recipe.get_editor_property('landscape_accumulation'))
+    _apply_weather(module, recipe)
+    _apply_trample(module, recipe)
+
     module._log('%s: %d layer(s), %s, project outputs %s'
                 % (module.MASTER_NAME, len(module.LAYERS), module.ROOT,
                    'on' if module.BUILD_PROJECT_OUTPUTS else 'off'))
     module._log('  debug %s, texture arrays %s'
                 % ('on' if module.INCLUDE_DEBUG else 'off',
                    'on' if module.TEXTURE_ARRAYS else 'off'))
+    module._log('  weather %s' % module.WEATHER_MPC)
+    module._log('  accumulation %s, trample %s'
+                % ('on' if module.INCLUDE_ACCUMULATION else 'off',
+                   module.TRAMPLE_MPC if module.INCLUDE_TRAMPLE else 'off'))
     return module
 
 
@@ -129,26 +178,8 @@ def apply_surface(module, recipe):
 
     _apply_common(module, recipe)
 
-    # The property resolves to the loaded collection, whose repr ends in its class name, so parsing
-    # the string is a trap: ask the object for its path and drop the object suffix.
-    collection = recipe.get_editor_property('weather_collection')
-    path = ''
-    if collection is not None:
-        try:
-            path = str(collection.get_path_name())
-        except Exception:
-            try:
-                path = str(collection.to_soft_object_path().to_string())
-            except Exception:
-                path = ''
-        path = path.split('.')[0].strip()
-    if path:
-        module.WEATHER_MPC = path
-    else:
-        # Unset: put one beside the master rather than in the plugin, and hand the recipe back so
-        # the generator can fill the field in once it has created it.
-        module.WEATHER_MPC = '%s/MPC_%sWeather' % (module.ROOT, module.MASTER_NAME)
-    module.RECIPE = recipe
+    _apply_weather(module, recipe)
+    _apply_trample(module, recipe)
     module.INCLUDE_DETAIL = bool(recipe.get_editor_property('detail_maps'))
     module.INCLUDE_TILE_BREAK = bool(recipe.get_editor_property('distance_tiling_break'))
     module.INCLUDE_PARALLAX = bool(recipe.get_editor_property('parallax'))

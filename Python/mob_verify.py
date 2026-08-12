@@ -40,6 +40,10 @@ SURFACE_EXPECT = [
     # Accumulation reuses the cavity and normal the material already has, so no extra taps.
     ('accumulation', ['bAccumulation'], dict(tex=3, samplers=4)),
     ('rain ripples', ['bWetness', 'bRipples'], dict(tex=5, samplers=4)),
+    # Three taps of one render target - the point and a texel along each axis, which is where the
+    # slope comes from. The fifth sampler is the clamp group, and everything clamped shares it.
+    ('trample', ['bTrample'], dict(tex=6, samplers=5)),
+    ('trample and accumulation', ['bTrample', 'bAccumulation'], dict(tex=6, samplers=5)),
 ]
 
 

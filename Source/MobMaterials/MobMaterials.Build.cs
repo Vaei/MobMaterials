@@ -12,6 +12,8 @@ public class MobMaterials : ModuleRules
 			new string[]
 			{
 				"Core",
+				"CoreUObject",
+				"Engine",
 				"DeveloperSettings",
 			}
 			);
@@ -19,8 +21,6 @@ public class MobMaterials : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"CoreUObject",
-				"Engine",
 				"Projects",
 				"RenderCore",
 			}

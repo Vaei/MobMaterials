@@ -52,6 +52,14 @@ BASE_TEX_MASK = '/MobMaterials/Textures/T_BaseWhite'
 
 WEATHER_MPC = '/MobMaterials/MPC_MobWeather'
 WEATHER_PARAM = 'Wetness'
+SNOW_PARAM = 'Snow'
+
+# Written by AMobTrampleVolume at runtime, which is what lets one render target be read without a
+# dynamic material instance anywhere in the chain. The landscape builder authors the collection.
+TRAMPLE_MPC = '/MobMaterials/MPC_MobTrample'
+TRAMPLE_CENTRE_PARAM = 'TrampleCentre'
+TRAMPLE_EXTENT_PARAM = 'TrampleExtent'
+INCLUDE_TRAMPLE = True
 
 # Set by mob_recipe so a newly created collection can be written back onto the recipe.
 RECIPE = None
@@ -667,8 +675,44 @@ def build_blend_function():
 # Per instance, set on the component, so one material instance serves thousands of actors that all
 # look different. A hash of position cannot do that: it gives every copy a different tint, but
 # never the tint somebody chose.
+_CODE_TRAMPLE_UV = """
+float In;
+float2 UV = MobTrampleUV(WorldPos, Centre, Extent.xy, In);
+
+// One texel along each axis, in UV rather than world units, so the two neighbours the slope is
+// measured from are the texels either side and not some fraction of one.
+float2 Step = Extent.z / max(Extent.xy * 2.0f, float2(MOB_EPS, MOB_EPS));
+
+OutAlongX = UV + float2(Step.x, 0.0f);
+OutAlongY = UV + float2(0.0f, Step.y);
+OutInside = In;
+return UV;
+"""
+
+_CODE_TRAMPLE_READ = """
+float2 G;
+float M = MobTrampleDepth(Centre, AlongX, AlongY, Inside, Depth, Extent.z, G);
+OutGradient = G;
+return M;
+"""
+
+_CODE_TRAMPLE_APPLY = """
+float3 N;
+float R;
+float3 Col = MobApplyTrample(BaseColor, Normal, Roughness, Gradient, Mask,
+                             Darkening, RoughnessTarget, NormalStrength,
+                             Parameters.TangentToWorld, N, R);
+OutNormal = N;
+OutRoughness = R;
+return Col;
+"""
+
+
 _CODE_ACCUMULATION = """
-float Mask = MobAccumulation(WorldNormalZ, Cavity, Noise, Amount, Facing, CavityBias, NoiseAmount);
+// Trample takes the covering back off rather than scaling what settles, so a print through snow is
+// the surface showing again and not a thinner snow.
+float Fall = Amount * saturate(1.0f - Trample * TrampleErase);
+float Mask = MobAccumulation(WorldNormalZ, Cavity, Noise, Fall, Facing, CavityBias, NoiseAmount);
 float3 Col = MobApplyAccumulation(BaseColor, Normal, Roughness, Colour, CoverRoughness, Mask,
                                   OutNormal, OutRoughness);
 OutMask = Mask;
@@ -692,7 +736,8 @@ return MobWind(WorldPos, ObjectPos, Direction, Time, Strength, Speed,
 """
 
 _CODE_DEBUG = """
-return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour) * max(Exposure, 0.0f);
+return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour,
+                    Trample, Accumulation) * max(Exposure, 0.0f);
 """
 
 DEBUG_ENUM = '/Script/MobMaterials.EMobDebugView'
@@ -1035,7 +1080,7 @@ def ensure_weather_parameters():
     existing = list(mpc.get_editor_property('scalar_parameters'))
     names = [str(p.get_editor_property('parameter_name')) for p in existing]
     added = []
-    for name, default in ((WEATHER_PARAM, 0.0), ('PuddleAmount', 1.0)):
+    for name, default in ((WEATHER_PARAM, 0.0), ('PuddleAmount', 1.0), (SNOW_PARAM, 0.0)):
         if name in names:
             continue
         p = unreal.CollectionScalarParameter()
@@ -1055,6 +1100,46 @@ def ensure_weather_parameters():
         save(RECIPE)
         _log('recipe now points at %s' % WEATHER_MPC)
     _log('weather parameters ready%s' % (' (added %s)' % ', '.join(added) if added else ''))
+    return mpc
+
+
+def ensure_trample_parameters():
+    """Creates the trample collection if absent and makes sure it carries the volume's bounds.
+
+    A collection rather than parameters on the instance because AMobTrampleVolume writes them at
+    runtime, and every material reading one volume has to agree about where that volume is.
+    """
+    if EAL.does_asset_exist(TRAMPLE_MPC):
+        mpc = unreal.load_asset(TRAMPLE_MPC)
+    else:
+        package, _, name = TRAMPLE_MPC.rpartition('/')
+        mpc = _tools().create_asset(name, package, unreal.MaterialParameterCollection,
+                                    unreal.MaterialParameterCollectionFactoryNew())
+    if mpc is None:
+        raise RuntimeError('could not create %s' % TRAMPLE_MPC)
+
+    existing = list(mpc.get_editor_property('vector_parameters'))
+    names = [str(p.get_editor_property('parameter_name')) for p in existing]
+    added = []
+    for name, default in ((TRAMPLE_CENTRE_PARAM, (0.0, 0.0, 0.0, 0.0)),
+                          (TRAMPLE_EXTENT_PARAM, (1000.0, 1000.0, 4.0, 0.0))):
+        if name in names:
+            continue
+        p = unreal.CollectionVectorParameter()
+        p.set_editor_property('parameter_name', name)
+        p.set_editor_property('default_value', unreal.LinearColor(*default))
+        existing.append(p)
+        added.append(name)
+
+    if added:
+        mpc.set_editor_property('vector_parameters', existing)
+        save(mpc)
+
+    if RECIPE is not None and RECIPE.get_editor_property('trample_collection') is None:
+        RECIPE.set_editor_property('trample_collection', mpc)
+        save(RECIPE)
+        _log('recipe now points at %s' % TRAMPLE_MPC)
+    _log('trample parameters ready%s' % (' (added %s)' % ', '.join(added) if added else ''))
     return mpc
 
 
@@ -1145,6 +1230,7 @@ GROUP_GLOBAL = '00 - Global'
 GROUP_BLEND = '10 - Blending'
 GROUP_WETNESS = '30 - Wetness'
 GROUP_ACCUM = '35 - Accumulation'
+GROUP_TRAMPLE = '37 - Trample'
 GROUP_VARIATION = '40 - Variation'
 GROUP_PRIMITIVE = '05 - Per Instance'
 GROUP_DETAIL = '45 - Detail'
@@ -1461,14 +1547,76 @@ def build_master_material():
         sw = _switch_param(mat, 'bRipples', ripples, '', wet, 'Normal', GROUP_WETNESS, 50, 300)
         shaded_normal, shaded_normal_out = sw, ''
 
+    # --- trample ----------------------------------------------------------
+    # Read here and applied after accumulation. A print through snow has to be a dent in the snow,
+    # and a covering laid over it afterwards would flatten the dent straight back out.
+    trample = None
+    trample_mask = None
+    if INCLUDE_TRAMPLE:
+        collection = unreal.load_asset(TRAMPLE_MPC)
+        bounds = {}
+        for i, param in enumerate((TRAMPLE_CENTRE_PARAM, TRAMPLE_EXTENT_PARAM)):
+            node = _expr(mat, unreal.MaterialExpressionCollectionParameter, -900, 900 + 60 * i)
+            node.set_editor_property('collection', collection)
+            node.set_editor_property('parameter_name', param)
+            mask3 = _expr(mat, unreal.MaterialExpressionComponentMask, -750, 900 + 60 * i)
+            for channel, on in (('r', True), ('g', True), ('b', True), ('a', False)):
+                mask3.set_editor_property(channel, on)
+            link(node, '', mask3, '')
+            bounds[param] = mask3
+
+        trample_uv = custom(mat, _CODE_TRAMPLE_UV, CMOT.CMOT_FLOAT2,
+                            ['WorldPos', 'Centre', 'Extent'],
+                            [('OutAlongX', CMOT.CMOT_FLOAT2), ('OutAlongY', CMOT.CMOT_FLOAT2),
+                             ('OutInside', CMOT.CMOT_FLOAT1)],
+                            -600, 900, 'Trample coordinates')
+        link(worldpos, '', trample_uv, 'WorldPos')
+        link(bounds[TRAMPLE_CENTRE_PARAM], '', trample_uv, 'Centre')
+        link(bounds[TRAMPLE_EXTENT_PARAM], '', trample_uv, 'Extent')
+
+        trample_tex = _param_texture(mat, 'TrampleMask', BASE_TEX_NOISE, GROUP_TRAMPLE, -900, 1020, 0)
+        taps = []
+        for i, uv_out in enumerate(('', 'OutAlongX', 'OutAlongY')):
+            # Clamp rather than wrap: the mask is a window onto the world, and a wrapped one would
+            # repeat the far side of the volume along its edge.
+            s = _expr(mat, unreal.MaterialExpressionTextureSample, -350, 900 + 90 * i)
+            s.set_editor_property('sampler_source',
+                                  unreal.SamplerSourceMode.SSM_CLAMP_WORLD_GROUP_SETTINGS)
+            s.set_editor_property('sampler_type', ST.SAMPLERTYPE_MASKS)
+            s.set_editor_property('automatic_view_mip_bias', False)
+            link(trample_tex, '', s, 'Tex')
+            link(trample_uv, uv_out, s, 'UVs')
+            taps.append(s)
+
+        trample = custom(mat, _CODE_TRAMPLE_READ, CMOT.CMOT_FLOAT1,
+                         ['Centre', 'AlongX', 'AlongY', 'Inside', 'Depth', 'Extent'],
+                         [('OutGradient', CMOT.CMOT_FLOAT2)], -100, 900, 'Trample depth')
+        for pin, tap_node in zip(('Centre', 'AlongX', 'AlongY'), taps):
+            link(tap_node, 'R', trample, pin)
+        link(trample_uv, 'OutInside', trample, 'Inside')
+        link(bounds[TRAMPLE_EXTENT_PARAM], '', trample, 'Extent')
+        link(_param_scalar(mat, 'Trample_Depth', 1.0, GROUP_TRAMPLE, -900, 1080, 1,
+                           desc='Scales what the render target holds into how deep a print reads'),
+             '', trample, 'Depth')
+
+        zero = _expr(mat, unreal.MaterialExpressionConstant, -100, 1050)
+        zero.set_editor_property('r', 0.0)
+        trample_mask = _switch_param(mat, 'bTrample', trample, '', zero, '', GROUP_TRAMPLE, 50, 900)
+
     # --- accumulation -----------------------------------------------------
     if INCLUDE_ACCUMULATION:
         acc = custom(mat, _CODE_ACCUMULATION, CMOT.CMOT_FLOAT3,
                      ['BaseColor', 'Normal', 'Roughness', 'WorldNormalZ', 'Cavity', 'Noise',
-                      'Colour', 'CoverRoughness', 'Amount', 'Facing', 'CavityBias', 'NoiseAmount'],
+                      'Colour', 'CoverRoughness', 'Amount', 'Facing', 'CavityBias', 'NoiseAmount',
+                      'Trample', 'TrampleErase'],
                      [('OutNormal', CMOT.CMOT_FLOAT3), ('OutRoughness', CMOT.CMOT_FLOAT1),
                       ('OutMask', CMOT.CMOT_FLOAT1)],
                      -100, 600, 'Accumulation')
+        if trample_mask is not None:
+            link(trample_mask, '', acc, 'Trample')
+        link(_param_scalar(mat, 'Accumulation_TrampleErase', 1.0, GROUP_ACCUM, -600, 1060, 7,
+                           desc='How completely a footprint clears the covering'),
+             '', acc, 'TrampleErase')
         link(shaded_colour, shaded_colour_out, acc, 'BaseColor')
         link(shaded_normal, shaded_normal_out, acc, 'Normal')
         link(shaded_rough, shaded_rough_out, acc, 'Roughness')
@@ -1478,7 +1626,19 @@ def build_master_material():
              '', acc, 'Noise')
         link(_param_vector(mat, 'Accumulation_Colour', (0.86, 0.89, 0.94), GROUP_ACCUM, -600, 600, 0),
              '', acc, 'Colour')
-        for nm, dv, so in (('Amount', 0.0, 1), ('Facing', 0.55, 2), ('CavityBias', 0.35, 3),
+        # How much has fallen is weather, so it comes from the collection and every material
+        # follows one number. The local amount is what lets a sheltered surface opt out.
+        fallen = _expr(mat, unreal.MaterialExpressionCollectionParameter, -600, 940)
+        fallen.set_editor_property('collection', unreal.load_asset(WEATHER_MPC))
+        fallen.set_editor_property('parameter_name', SNOW_PARAM)
+        acc_local = _param_scalar(mat, 'Accumulation_LocalAmount', 1.0, GROUP_ACCUM, -600, 990, 1,
+                                  desc='Scales the global fall. 0 opts this instance out entirely')
+        acc_amount = _expr(mat, unreal.MaterialExpressionMultiply, -350, 940)
+        link(fallen, '', acc_amount, 'A')
+        link(acc_local, '', acc_amount, 'B')
+        link(acc_amount, '', acc, 'Amount')
+
+        for nm, dv, so in (('Facing', 0.55, 2), ('CavityBias', 0.35, 3),
                            ('NoiseAmount', 0.4, 4), ('CoverRoughness', 0.85, 6)):
             link(_param_scalar(mat, 'Accumulation_' + nm, dv, GROUP_ACCUM, -600, 750 + so * 50, so),
                  '', acc, nm)
@@ -1492,6 +1652,32 @@ def build_master_material():
         shaded_colour, shaded_colour_out = sw_c, ''
         shaded_normal, shaded_normal_out = sw_n, ''
         shaded_rough, shaded_rough_out = sw_r, ''
+
+    if INCLUDE_TRAMPLE:
+        applied = custom(mat, _CODE_TRAMPLE_APPLY, CMOT.CMOT_FLOAT3,
+                         ['BaseColor', 'Normal', 'Roughness', 'Mask', 'Gradient',
+                          'Darkening', 'RoughnessTarget', 'NormalStrength'],
+                         [('OutNormal', CMOT.CMOT_FLOAT3), ('OutRoughness', CMOT.CMOT_FLOAT1)],
+                         200, 900, 'Trample')
+        link(shaded_colour, shaded_colour_out, applied, 'BaseColor')
+        link(shaded_normal, shaded_normal_out, applied, 'Normal')
+        link(shaded_rough, shaded_rough_out, applied, 'Roughness')
+        link(trample, '', applied, 'Mask')
+        link(trample, 'OutGradient', applied, 'Gradient')
+        for nm, dv, so in (('Darkening', 0.7, 2), ('RoughnessTarget', 0.35, 3),
+                           ('NormalStrength', 1.0, 4)):
+            link(_param_scalar(mat, 'Trample_' + nm, dv, GROUP_TRAMPLE, -100, 1100 + so * 50, so),
+                 '', applied, nm)
+
+        # Switched here rather than around the taps: a static switch takes its dead branch with it,
+        # so an instance with trample off compiles none of the three.
+        shaded_colour = _switch_param(mat, 'bTrample', applied, '', shaded_colour,
+                                      shaded_colour_out, GROUP_TRAMPLE, 400, 900)
+        shaded_normal = _switch_param(mat, 'bTrample', applied, 'OutNormal', shaded_normal,
+                                      shaded_normal_out, GROUP_TRAMPLE, 400, 960)
+        shaded_rough = _switch_param(mat, 'bTrample', applied, 'OutRoughness', shaded_rough,
+                                     shaded_rough_out, GROUP_TRAMPLE, 400, 1020)
+        shaded_colour_out = shaded_normal_out = shaded_rough_out = ''
 
     # --- finalise ---------------------------------------------------------
     final = _fn_call(mat, FN_ROOT + '/MF_MobSurfaceFinalise', 0, -600)
@@ -1590,7 +1776,7 @@ def build_master_material():
     if INCLUDE_DEBUG:
         dbg = custom(mat, _CODE_DEBUG, CMOT.CMOT_FLOAT3,
                      ['Mode', 'Weights', 'Cavity', 'Normal', 'Wetness', 'Height', 'VertexColour',
-                      'Exposure'],
+                      'Trample', 'Accumulation', 'Exposure'],
                      [], 300, 800, 'Debug view')
         link(_param_scalar(mat, 'DebugMode', 1.0, GROUP_DEBUG, 0, 800, 1,
                            desc=DEBUG_MODE_DESC, enum=DEBUG_ENUM), '', dbg, 'Mode')
@@ -1602,6 +1788,13 @@ def build_master_material():
         link(wet, 'Mask', dbg, 'Wetness')
         link(blend, 'Height', dbg, 'Height')
         link(vcol, '', dbg, 'VertexColour')
+
+        for pin, src, out in (('Trample', trample_mask, ''),
+                              ('Accumulation', acc if INCLUDE_ACCUMULATION else None, 'OutMask')):
+            if src is None:
+                src, out = _expr(mat, unreal.MaterialExpressionConstant, 0, 950), ''
+                src.set_editor_property('r', 0.0)
+            link(src, out, dbg, pin)
 
         black = _expr(mat, unreal.MaterialExpressionConstant3Vector, 0, 900)
         black.set_editor_property('constant', unreal.LinearColor(0.0, 0.0, 0.0, 1.0))
@@ -1718,6 +1911,8 @@ def build_all(recipe=None):
     mob_recipe.apply_surface(me, recipe)
 
     ensure_weather_parameters()
+    if INCLUDE_TRAMPLE:
+        ensure_trample_parameters()
     build_functions()
 
     # Siblings first, so the module is left describing the recipe that was asked for.

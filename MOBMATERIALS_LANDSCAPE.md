@@ -14,6 +14,8 @@ Setup and troubleshooting are in [`README.md`](README.md). The surface master is
 | [Slope rock](#slope-rock) | cliffs without painting them |
 | [Moss](#moss) | cavity, shade and slope decide where it grows |
 | [Wetness](#wetness) | damp, then standing water |
+| [Accumulation](#accumulation) | snow, dust or ash settling by facing |
+| [Trample](#trample) | what has been walked through |
 | [Global grade](#global-grade) | one place to shift the whole terrain |
 | [Debug views](#debug-views) | seeing the blend instead of guessing at it |
 | [Runtime virtual texture](#runtime-virtual-texture) | caching the blend, and blending meshes into it |
@@ -151,6 +153,43 @@ Both compare against cosines and smoothsteps rather than calling `acos`, so ther
 
 The mask feeds the physical material output, so wet dirt reads as mud underfoot.
 
+## Accumulation
+
+`MF_MobTerrainAccumulation` lays snow, dust or ash over the finished terrain, weighted by which way the ground faces and biased into the crevices. It costs no samples: it reuses the blended cavity and the surface normal.
+
+| | |
+|---|---|
+| `Accumulation_Amount` | how much has fallen. This is the one to drive |
+| `Accumulation_Colour` | white and slightly blue is snow; a warm grey is dust |
+| `Accumulation_Facing` | how up-facing the ground must be to hold any |
+| `Accumulation_CavityBias` | how much it favours crevices, where a thin covering starts and the last of it survives |
+| `Accumulation_NoiseAmount` | breaks the line between covered and bare, so it does not read as a threshold |
+| `Accumulation_CoverRoughness` | snow is rough. High |
+| `Accumulation_TrampleErase` | how completely a footprint clears the covering |
+
+There is no static switch: it is arithmetic on values the material already has, so `Amount` at 0 costs what a switch would have saved. The recipe's **Landscape Accumulation** decides whether it is in the master at all.
+
+A **paint layer with a slope mask** is still the better answer where snow has to drift in one particular place. This is for a fall that covers everything at once and can be driven from a single number. [`MOBMATERIALS_WEATHER.md`](MOBMATERIALS_WEATHER.md) has the numbers that separate snow from dust and ash.
+
+## Trample
+
+`bTrample`. A world-space record of what has been walked through, read back out of the render target `AMobTrampleVolume` draws into: the ground goes darker, its roughness moves, the surface tilts into the print, and the accumulation comes off it.
+
+Three taps of one render target - the point, and one texel along each axis, which is where the slope comes from. A screen-space derivative would have been one tap, but a screen-space derivative of a world-projected mask changes with the camera and the trench would slide across the ground as you turned.
+
+| | |
+|---|---|
+| `TrampleMask` | the render target. Must be the same asset the volume draws into |
+| `Trample_Depth` | scales what the target holds into how far the surface tilts |
+| `Trample_Darkening` | base colour multiplier where the ground is fully broken |
+| `Trample_RoughnessTarget` | wet mud is smoother, broken snow is rougher. Both live here |
+| `Trample_NormalStrength` | how far the trench tilts the surface |
+| `bTrampleWPO` | sinks the ground into a print for real, rather than only shading like it. One vertex tap, off by default |
+| `Trample_WPODepth` | how far a full strength print sinks, in world units |
+| `Trample_WPOFadeStart`, `Trample_WPOFadeLength` | where the trench flattens out again with distance |
+
+The whole system - placing a volume, what writes it, what it costs and what it cannot do - is in [`MOBMATERIALS_WEATHER.md`](MOBMATERIALS_WEATHER.md#trample).
+
 ## Global grade
 
 One Custom node at the end of the chain: `GlobalHue`, `GlobalSaturation`, `GlobalValue`, `GlobalTint`, `GlobalNormalFlatten`, `GlobalRoughnessMin`, plus a distance desaturation and a distance colour for aerial perspective.
@@ -167,6 +206,8 @@ One Custom node at the end of the chain: `GlobalHue`, `GlobalSaturation`, `Globa
 | Wetness | where the terrain counts as wet |
 | Height | blended height. Flat grey here means nothing to blend along |
 | Vertex Colour | as painted |
+| Trample | where the ground has been walked through. Black everywhere no volume covers |
+| Accumulation | where snow, dust or ash has settled |
 
 `DebugExposure` scales the view before it is drawn. Height and weights both spend most of their time near the top of their range, and turning this down is what brings the variation that matters back into a range the eye can read.
 

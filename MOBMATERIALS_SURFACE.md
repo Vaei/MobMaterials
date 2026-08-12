@@ -12,6 +12,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The landscape master 
 | [Parallax](#parallax) | depth without geometry, cheap and expensive |
 | [Wetness](#wetness) | one global value, and what it does to a surface |
 | [Accumulation](#accumulation) | snow, dust, ash - settling by which way a surface faces |
+| [Trample](#trample) | what has been walked through |
 | [Colour variation](#colour-variation) | per object, and across a single mesh |
 | [Per-instance data](#per-instance-data) | telling one actor to be a different colour |
 | [Cavity](#cavity) | micro shadowing, and why it never reaches the AO pin |
@@ -148,6 +149,27 @@ No extra samples: it reuses the cavity the layers already blended and the surfac
 
 It runs **after** wetness, so a covering sits on top of a wet surface rather than being darkened by it. That is the right order: snow that has just landed is not wet yet.
 
+## Trample
+
+`bTrample`. Where the surface has been walked through: darker, its roughness moved, tilted into the print, and with the accumulation taken back off it.
+
+Everything else here is a function of the surface, so it can be worked out per pixel. Trample is a record of what happened, so `AMobTrampleVolume` keeps that record in a render target projected straight down and the material reads it back.
+
+| | |
+|---|---|
+| `TrampleMask` | the render target. Must be the same asset the volume draws into |
+| `Trample_Depth` | scales what the target holds into how far the surface tilts |
+| `Trample_Darkening` | base colour multiplier where the surface is fully broken |
+| `Trample_RoughnessTarget` | wet mud is smoother, broken snow is rougher. Both live here |
+| `Trample_NormalStrength` | how far the trench tilts the surface |
+| `Accumulation_TrampleErase` | how completely a print clears the covering |
+
+Three taps, and the one thing here besides parallax occlusion that spends a sampler - the mask is clamped rather than wrapped, so it lands in the clamp group. Everything clamped then shares that one.
+
+It runs **after** accumulation, deliberately. A print through snow has to be a dent in the snow, and a covering laid over it afterwards would flatten the dent straight back out.
+
+Placing a volume, what writes it, and what it cannot do are in [`MOBMATERIALS_WEATHER.md`](./MOBMATERIALS_WEATHER.md#trample).
+
 ## Colour variation
 
 Two independent sources, `bColorVariation` and `bMacroVariation`.
@@ -231,6 +253,8 @@ The opacity mask is read from **alpha**, which skips the sRGB decode, so the thr
 | Wetness | where the surface counts as wet |
 | Height | blended height. Flat grey here means nothing to blend along |
 | Vertex Colour | as painted |
+| Trample | where the surface has been walked through. Black everywhere no volume covers |
+| Accumulation | where snow, dust or ash has settled |
 
 `DebugExposure` scales the view before it is drawn. Several of these sit near white on their own - a height that never leaves the top of its range, a weight parked at one - and turning it down is what brings the variation in them back into a range the eye can read.
 
@@ -267,14 +291,17 @@ Feature gating is done with static bools on the material function inputs, not sw
 
 Measured from the generated HLSL:
 
-| | Texture taps | PS instructions |
-|---|---|---|
-| Everything off | 3 | 996 |
-| One extra layer | 6 | 1082 |
-| One triplanar layer | 9 | 1051 |
-| Three layers, all triplanar | 27 | 1289 |
+| | Texture taps | Samplers | PS instructions |
+|---|---|---|---|
+| Everything off | 3 | 4 | 999 |
+| One extra layer | 6 | 4 | 1082 |
+| One triplanar layer | 9 | 4 | 1051 |
+| Three layers, all triplanar | 27 | 4 | 1289 |
+| Accumulation | 3 | 4 | 1025 |
+| Trample | 6 | **5** | 1050 |
+| Trample and accumulation | 6 | **5** | 1082 |
 
-**Samplers stay at 4 in every permutation.** Every sample is Shared:Wrap, so they collapse onto one sampler state and the 16-sampler limit never binds no matter how many layers are on.
+**Samplers stay at 4 for every layer permutation.** Every layer sample is Shared:Wrap, so they collapse onto one sampler state and the 16-sampler limit never binds no matter how many layers are on. Trample is the exception, and only ever costs one: its mask is clamped rather than wrapped, so it opens the clamp group, and everything clamped shares that.
 
 > [!NOTE]
 > The Material Editor's sampler stat over-reports. It counted 12 for the triplanar case above, where the shader really contains 9: the stat also counts the three `Texture2DSample` overload declarations and the engine's own BRDF lookup. Dump the shader and count `Texture2DSample(Material_` if the number matters.
