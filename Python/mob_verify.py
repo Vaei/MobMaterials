@@ -117,8 +117,9 @@ def run(recipe):
 
     # The AO pin has to stay free, or cavity doubles with the renderer's own occlusion. This is
     # the one claim that is about what the material does NOT do, and so the easiest to lose.
+    has_pin_probe = hasattr(MEL, 'get_material_property_input_node')
     ao = MEL.get_material_property_input_node(mat, unreal.MaterialProperty.MP_AMBIENT_OCCLUSION) \
-        if hasattr(MEL, 'get_material_property_input_node') else None
+        if has_pin_probe else None
     r.check('ambient occlusion pin left unwritten', ao is None, 'cavity multiplies instead')
 
     if kind == mob_recipe.LANDSCAPE:
@@ -195,6 +196,26 @@ def run(recipe):
                     bool(mat.get_editor_property('two_sided'))
                     and 'MASKED' in str(mat.get_editor_property('blend_mode')).upper(),
                     str(mat.get_editor_property('shading_model')))
+
+            r.check('transmission map is offered', 'bTransmissionMap' in switches)
+
+            # Blue is transmission on this master, so a metallic pin reading the blend would be
+            # that thickness shading as metal.
+            metal = MEL.get_material_property_input_node(mat, unreal.MaterialProperty.MP_METALLIC) \
+                if has_pin_probe else None
+            r.check('foliage metallic is a constant',
+                    metal is None
+                    or 'Constant' in metal.get_class().get_name(),
+                    metal.get_class().get_name() if metal else 'unwritten')
+
+            # It reuses the blue channel the layers already sampled, so turning it on must not
+            # reach for a texture of its own.
+            on = _probe(mat, 'V_transmission', {'bTransmissionMap'})
+            off = _probe(mat, 'V_transmission_off', set())
+            r.check('the transmission map costs no sampler',
+                    on['samplers'] == off['samplers'] and on['tex'] == off['tex'],
+                    'tex %s -> %s, samplers %s -> %s'
+                    % (off['tex'], on['tex'], off['samplers'], on['samplers']))
 
     _log('%d passed, %d failed' % (r.passed, len(r.failed)))
     for f in r.failed:

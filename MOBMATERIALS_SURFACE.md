@@ -20,7 +20,7 @@ Setup and troubleshooting are in [`README.md`](README.md). The landscape master 
 | [Detail](#detail) | the second normal that makes a surface hold up close |
 | [Distance](#distance) | the clamp that stops speculars crawling |
 | [Blend modes](#blend-modes) | opaque, masked, two-sided |
-| [Foliage](#foliage) | a different master, and why it has to be |
+| [Foliage](#foliage) | a different master, why it has to be, and light through a leaf |
 | [Debug views](#debug-views) | seeing the blend instead of guessing at it |
 | [Cost](#cost) | what each feature actually costs, measured |
 
@@ -35,8 +35,11 @@ Three samplers per layer.
 | `_BaseColor` | albedo | Default, sRGB |
 | `_Normal` | tangent normal | Normalmap |
 | `_CRM` | **C**avity, **R**oughness, **M**etallic | Masks, sRGB off |
+| `_CRT` | **C**avity, **R**oughness, **T**ransmission - foliage only | Masks, sRGB off |
 
 There is no ambient occlusion channel, on purpose. The renderer supplies its own occlusion and a baked AO map on top of it darkens twice. Cavity takes that slot instead, and it does double duty as the height field for layer blending, so height blending needs no fourth texture.
+
+Blue is the only channel that means two things, and which one it means is decided by the master rather than the texture. A standard master reads it as metallic; a foliage master reads it as transmission, because a plant is never metal and the sample is paid for either way. See [Foliage](#foliage).
 
 Art almost never arrives packed as CRM. **Mob → Remap Texture Channels...** repacks it: choose how the incoming maps are laid out - packed ORM, MRAO, RMA, or a texture each - and it fills the three output slots, which stay editable for anything it does not recognise. No preset wires ambient occlusion anywhere, for the reason above.
 
@@ -255,6 +258,7 @@ The opacity mask is read from **alpha**, which skips the sRGB decode, so the thr
 | Vertex Colour | as painted |
 | Trample | where the surface has been walked through. Black everywhere no volume covers |
 | Accumulation | where snow, dust or ash has settled |
+| Transmission | how much light the surface lets through. Foliage only; black on every other master |
 
 `DebugExposure` scales the view before it is drawn. Several of these sit near white on their own - a height that never leaves the top of its range, a weight parked at one - and turning it down is what brings the variation in them back into a range the eye can read.
 
@@ -267,6 +271,24 @@ Layer weights are the one worth reaching for. A wrong weight is invisible in the
 Tick **Foliage** on a recipe and it authors a foliage master instead of a standard one: masked, two-sided, two-sided-foliage shading, a subsurface colour for light coming through a leaf, and wind on world position offset.
 
 This is the one feature that **cannot** be a switch. Shading model, two-sidedness and blend mode are material properties rather than parameters, so foliage has to be a material of its own. Point a second recipe at the same output folder with a different asset name and generate - you get `M_MyFoliage` beside `M_MySurface`, sharing one copy of the functions.
+
+### Transmission
+
+A foliage master reads the blue channel of the mask pack as **transmission** - how thin the surface is - where a standard master reads it as metallic. The slot is named `Layer0_CRT` rather than `Layer0_CRM` for that reason. Nothing about the sampling changes; it is the same three textures, and blue is a channel a standard master needs and a plant never does, so the alternative is sampling it and throwing it away.
+
+This is what a flat subsurface colour cannot say. `SubsurfaceColor` alone gives a thick stem exactly as much glow as a leaf tip, which is the single loudest tell that foliage is fake. With a map in blue, tips and thin blades let light through and stems, veins and overlapping leaves stay opaque.
+
+| | |
+|---|---|
+| `bTransmissionMap` | reads blue as thickness. **Off by default** |
+| `SubsurfaceColor` | the colour of light coming through |
+| `TransmissionAmount` | how much of it, over the whole plant |
+| `Layer0_TransmissionScale` etc. | per layer, so bark and leaf can differ |
+
+> [!WARNING]
+> `bTransmissionMap` is off by default because blue is metallic everywhere else, and art repacked from an ORM has metallic **zero** there. Turning it on against such a pack puts no light through the plant at all - which reads as foliage that has gone flat and dark, not as a missing map. Repack first: **Mob → Remap Texture Channels...**, target **CRT (foliage)**, blue slot pointed at a transmission or thickness map. A thickness map is the same signal inverted, so tick Invert on that slot.
+
+Where no map exists, leave it off. Off is exactly the old behaviour - one colour for the whole plant - and costs nothing.
 
 ### Wind
 

@@ -206,7 +206,7 @@ float3 MobContrast(float3 Color, float Contrast, float Pivot)
  *   4 wetness                                   8 accumulation
  */
 float3 MobDebugView(int Mode, float3 Weights, float Cavity, float3 Normal, float Wetness,
-	float Height, float3 VertexColour, float Trample, float Accumulation)
+	float Height, float3 VertexColour, float Trample, float Accumulation, float Transmission)
 {
 	if (Mode == 1) { return saturate(Weights); }
 	if (Mode == 2) { return saturate(Cavity).xxx; }
@@ -216,6 +216,7 @@ float3 MobDebugView(int Mode, float3 Weights, float Cavity, float3 Normal, float
 	if (Mode == 6) { return saturate(VertexColour); }
 	if (Mode == 7) { return float3(0.0f, saturate(Trample), 0.0f); }
 	if (Mode == 8) { return float3(0.0f, 0.0f, saturate(Accumulation)); }
+	if (Mode == 9) { return saturate(Transmission).xxx; }
 	return 0.0f.xxx;
 }
 

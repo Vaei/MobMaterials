@@ -97,7 +97,7 @@ Right-click `MI_<Name>_Prop` → **Create Material Instance**. That preset has e
 
 Set `Layer0_BC`, `Layer0_NRM`, `Layer0_CRM`. Nothing else. Look at it on a mesh before adding anything.
 
-**CRM is Cavity, Roughness, Metallic** - not AO. The game already has ambient occlusion; a texture AO on top double-darkens. Cavity does the job AO was doing and also serves as the height source for blending, so no separate height texture is needed.
+**CRM is Cavity, Roughness, Metallic** - not AO. The game already has ambient occlusion; a texture AO on top double-darkens. Cavity does the job AO was doing and also serves as the height source for blending, so no separate height texture is needed. On a foliage master that last channel is transmission instead of metallic; see [6. Foliage](#6-foliage).
 
 Then the second layer:
 
@@ -164,7 +164,14 @@ Then `bRipples` for rain - set `RippleNormal` too, it defaults to flat - and `bA
 
 A second recipe pointed at the same output path, a different asset name, **Foliage** on. Generate. You get `M_MyFoliage` beside `M_MySurface`, sharing one copy of the material functions.
 
-It comes out masked, two-sided, two-sided-foliage shading, with a subsurface colour for light coming through a leaf.
+It comes out masked, two-sided, two-sided-foliage shading, with a subsurface colour for light coming through a leaf. Set `Layer0_BC`, `Layer0_NRM`, `Layer0_CRT`, and point `OpacityMask` at the same texture as `Layer0_BC` - the clip reads its alpha.
+
+That colour on its own gives a thick stem as much glow as a thin leaf tip, which is what makes foliage read as fake. Tick `bTransmissionMap` and the blue channel becomes how thin the surface is, so tips glow and stems stay opaque. Blue is metallic on a standard master and a plant is never metal, so this costs no extra sample - which is why the slot here is `Layer0_CRT` where a surface master has `Layer0_CRM`.
+
+> [!WARNING]
+> It is off by default for a reason. A pack repacked from an ORM has metallic **zero** in blue, so turning this on against one puts *no* light through the plant - the foliage goes flat and dark, which does not look like a missing map. Repack first: **Mob → Remap Texture Channels...**, target **CRT (foliage)**, blue pointed at a transmission map (or a thickness map with Invert ticked). No map, leave it off.
+
+`TransmissionAmount` is the one knob over the whole plant; `Layer0_TransmissionScale` and friends do it per layer, for bark against leaf.
 
 For wind, `bWind`, then two scales of the same motion: `WindStrength` / `WindSpeed` is the trunk sway carrying the whole plant, and `WindFlutterStrength` / `WindFlutterSpeed` is the leaf flutter across the sway direction so the leaves do not all travel along one line. Movement is weighted by height above the object origin, so the base stays planted with no skeleton and no painted weight. Phase comes from world position, so two plants side by side never move together.
 

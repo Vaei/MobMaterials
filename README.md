@@ -72,7 +72,7 @@ UE5.8+
 - **A tiling break bound to distance** - a second incommensurate tiling overlaid, so a wall keeps its detail near and stops reading as a grid far away
 - **Parallax, cheap or raymarched.** One-step offset sells brick and cobbles for a multiply and an add; occlusion walks the height field when a hero surface earns it
 - **Per-instance tint, roughness and wetness from custom primitive data**, so one material instance serves a thousand actors that all differ, with no new permutations and nothing to author per actor
-- **Foliage with wind** - masked, two-sided, light through the leaf, and two scales of motion weighted so the base stays planted and the tips move
+- **Foliage with wind** - masked, two-sided, and two scales of motion weighted so the base stays planted and the tips move. Light comes through the leaf per texel, from the mask channel a plant has no use for as metallic, so a tip glows where a stem stays opaque
 - **Snow, from one number.** Drag `Snow` 0 to 1 and it settles across the world by which way each surface faces, starting in the crevices and covering the flats last. Terrain, props and roofs all follow the same value, and none of it costs a texture sample
 - **Footprints through it that clear back to the ground**, darkening, roughening and denting what they cross, from one render target a volume draws into. The terrain can sink into them for real - one vertex tap, opt in
 - **And they sound right.** A step on fresh snow plays snow; a step in your own trail plays the earth you uncovered. The audio reaches that from the same three numbers the shader does, so nothing is authored twice
@@ -93,13 +93,59 @@ Full parameter-level detail is in [`MOBMATERIALS_LANDSCAPE.md`](./MOBMATERIALS_L
 |---|---|---|
 | Landscape | `_BC`, `_NRM`, `_HRC` | **H**eight, **R**oughness, **C**avity |
 | Surface | `_BaseColor`, `_Normal`, `_CRM` | **C**avity, **R**oughness, **M**etallic |
+| Foliage | `_BaseColor`, `_Normal`, `_CRT` | **C**avity, **R**oughness, **T**ransmission |
 
 Neither pack carries ambient occlusion, on purpose. The renderer supplies its own occlusion and a baked AO map on top of it darkens twice. Cavity takes that slot instead: it multiplies base colour and specular, which is what micro shadowing actually does, and never reaches the AO pin.
 
 The landscape gets both, because it has a channel to spare - height drives which layer wins, cavity darkens the crevices. The surface pack has no room for a fourth channel, so cavity does both jobs there.
 
+Blue is the only channel whose meaning depends on the master rather than the texture. A surface master reads it as metallic; a foliage master reads it as transmission, because a plant is never metal and that sample is paid for either way.
+
+**Mob → Remap Texture Channels...** repacks art into any of these from packed ORM, MRAO, RMA, or a map each.
+
 > [!WARNING]
 > You may be used to MRA format where R=Metallic, G=Roughness, B=Ambient Occlusion (AO). This format has always been wrong and results in double occlusion.
+
+#### What a surface material asks for
+
+Per layer, and layers 1 and 2 only exist when `bLayer1` / `bLayer2` are on:
+
+| Parameter | Content | Compression |
+|---|---|---|
+| `Layer0_BC` | albedo | Default, sRGB |
+| `Layer0_NRM` | tangent normal | Normalmap |
+| `Layer0_CRM` | R cavity, G roughness, B metallic | Masks, sRGB off |
+
+Then, each only sampled when the feature it belongs to is switched on:
+
+| Parameter | Switch | Content |
+|---|---|---|
+| `MacroNoiseTexture` | `bMacroVariation` | low-frequency world-space noise, so a long wall is not one flat tone |
+| `DetailNormal` | `bDetail` | the finer normal laid over the blend, faded with distance |
+| `RippleNormal` | `bRipples` | scrolling normal for rain on standing water. Two taps, one texture |
+| `TrampleMask` | `bTrample` | not authored. The render target a trample volume draws into |
+| `EmissiveMask` | `bEmissive` | where the surface glows |
+| `OpacityMask` | base property override | alpha only. Opaque materials compile the sample out |
+
+#### What a foliage material asks for
+
+The same three per layer, with blue read as transmission, plus one more that is always sampled because a foliage master is always masked:
+
+| Parameter | Content | Compression |
+|---|---|---|
+| `Layer0_BC` | albedo | Default, sRGB |
+| `Layer0_NRM` | tangent normal | Normalmap |
+| `Layer0_CRT` | R cavity, G roughness, **B transmission** | Masks, sRGB off |
+| `OpacityMask` | read from **alpha only** - point it at `Layer0_BC` | Default, sRGB |
+
+The optional maps above are all available here too. Most foliage uses layer 0 alone; layers 1 and 2 are for bark against leaf on one mesh, which is where per-layer `TransmissionScale` earns its place.
+
+There is no thickness map and no subsurface map. Thickness is CRM blue, and the colour of the light coming through is `SubsurfaceColor`, a parameter rather than a texture - one colour for the plant, shaped per texel by that channel.
+
+> [!NOTE]
+> `OpacityMask` is its own tap, not a swizzle of the base colour one, so a foliage master samples four textures where a one-layer surface master samples three. Pointing it at the same texture as `Layer0_BC` is the normal thing to do and does not make it free. Samplers do not move - every tap in these masters goes through the shared wrap group.
+
+Every texture parameter defaults to a 4x4 neutral in `Textures/`, so a slot left alone still loads but costs almost nothing.
 
 ---
 
@@ -271,6 +317,7 @@ In order of likelihood.
 | Distant surfaces sparkle | The distance clamp is disabled by its scalars. Raise `DistanceNormalFlatten` and `DistanceRoughnessFloor` |
 | Masked instance clips everything | The opacity mask is read from **alpha**, not a colour channel. A greyscale mask in RGB samples as 1 in alpha, or as 0 if the texture has none |
 | Metal everywhere | The `_CRM` blue channel is metallic. A pack that puts occlusion there needs `MetallicScale` at 0 |
+| Foliage went flat and dark when `bTransmissionMap` was ticked | The pack in `Layer0_CRT` has metallic in blue, not transmission, and metallic is 0 on a plant - so no light gets through. Repack it: **Remap Texture Channels**, target **CRT** |
 | Macro variation does nothing | `MacroNoiseTexture` defaults to a flat 4x4. It needs a real tiling noise, which the plugin does not ship |
 | Emissive does nothing | `EmissiveMask` defaults to black. Assign a mask, or a white texture for a flat glow |
 
@@ -303,10 +350,10 @@ Every distinct set of static switches is a distinct shader map, and PSOs are per
 * Initial release
 * Landscape master: paint layers with height-interlocked blending, stochastic hex tiling and a cheap dual-scale tier, slope rock, moss placed by cavity and slope, slope and altitude layer masks, wetness, optional texture array layers
 * Surface master: three layers, vertex paint, triplanar, height blending, detail normals, distance tiling break, parallax offset and occlusion, wetness with puddles and rain ripples, accumulation for snow, dust and ash, colour and macro variation, custom primitive data, emissive
-* Foliage master: masked, two-sided foliage shading, subsurface, wind on world position offset
+* Foliage master: masked, two-sided foliage shading, subsurface with an optional per-texel transmission mask in the blue channel, wind on world position offset
 * Project integration: runtime virtual texture with mesh blending, physical material output for footsteps, grass output
 * Debug views on both masters, sent to emissive with base colour blacked out
 * Recipe assets drive generation, so a project carries as many masters as it needs
 * Mat toolbar menu: generate, pack layer arrays, test level, contract verification, cost reporting, weather collection, and a per-developer hide
 * Fit UV Scale To Landscape: every layer's tile size worked out from the landscape's own quad size
-* Remap Texture Channels: repacks ORM, MRAO, RMA or separate maps into HRC or CRM, with a custom slot per output channel
+* Remap Texture Channels: repacks ORM, MRAO, RMA or separate maps into HRC, CRM or CRT, with a custom slot per output channel

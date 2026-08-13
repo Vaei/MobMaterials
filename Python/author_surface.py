@@ -356,7 +356,12 @@ float3 Col = MobContrast(MobApplyHSV(BC.rgb, HueShift, Saturation, Value), Contr
 
 OutNormal = MobAdjustNormal(NRM.rgb, NormalIntensity, NormalFlipY);
 OutRoughness = saturate(MobRemap(CRM.g, RoughnessMin, RoughnessMax));
+
+// Blue is metallic to a standard master and transmission to a foliage one. Both are read here and
+// only one is connected, so the other is dead by the time the shader compiler is done with it.
 OutMetallic = saturate(CRM.b * MetallicScale);
+OutTransmission = saturate(CRM.b * TransmissionScale);
+
 OutCavity = MobShapeCavity(CRM.r, CavityContrast);
 
 // Height for the layer blend is the raw cavity, not the shaded one: contrast is a look control
@@ -385,15 +390,17 @@ _LAYER_CONTROLS = [
     ('RoughnessMin', FIT.FUNCTION_INPUT_SCALAR, 0.0, 30, ''),
     ('RoughnessMax', FIT.FUNCTION_INPUT_SCALAR, 1.0, 31, ''),
     ('MetallicScale', FIT.FUNCTION_INPUT_SCALAR, 1.0, 32, ''),
-    ('CavityContrast', FIT.FUNCTION_INPUT_SCALAR, 1.0, 33, ''),
-    ('HeightBias', FIT.FUNCTION_INPUT_SCALAR, 0.0, 34, 'Pushes this layer up or down the blend'),
+    ('TransmissionScale', FIT.FUNCTION_INPUT_SCALAR, 1.0, 33,
+     'Foliage only: how much of the blue channel reaches the subsurface colour'),
+    ('CavityContrast', FIT.FUNCTION_INPUT_SCALAR, 1.0, 34, ''),
+    ('HeightBias', FIT.FUNCTION_INPUT_SCALAR, 0.0, 35, 'Pushes this layer up or down the blend'),
     ('HueShift', FIT.FUNCTION_INPUT_SCALAR, 0.0, 40, 'Degrees'),
     ('Saturation', FIT.FUNCTION_INPUT_SCALAR, 1.0, 41, ''),
     ('Value', FIT.FUNCTION_INPUT_SCALAR, 1.0, 42, ''),
     ('Contrast', FIT.FUNCTION_INPUT_SCALAR, 1.0, 43, ''),
 ]
 
-_LAYER_OUTPUTS = ['BaseColor', 'Normal', 'Roughness', 'Metallic', 'Cavity', 'Height']
+_LAYER_OUTPUTS = ['BaseColor', 'Normal', 'Roughness', 'Metallic', 'Transmission', 'Cavity', 'Height']
 
 
 def build_layer_function():
@@ -415,7 +422,7 @@ def build_layer_function():
     ins['NRM'] = fn_input(fn, 'NRM', FIT.FUNCTION_INPUT_TEXTURE2D, -1600, -520, 1,
                           description='Tangent normal map')
     ins['CRM'] = fn_input(fn, 'CRM', FIT.FUNCTION_INPUT_TEXTURE2D, -1600, -440, 2,
-                          description='R cavity, G roughness, B metallic')
+                          description='R cavity, G roughness, B metallic or transmission')
     ins['UV'] = fn_input(fn, 'UV', FIT.FUNCTION_INPUT_VECTOR2, -1600, -360, 3,
                          default=(0.0, 0.0), description='Mesh UV0')
     ins['WorldPos'] = fn_input(fn, 'WorldPos', FIT.FUNCTION_INPUT_VECTOR3, -1600, -300, 4,
@@ -549,12 +556,13 @@ def build_layer_function():
 
     grade_inputs = ['BC', 'NRM', 'CRM', 'Tint',
                     'NormalIntensity', 'NormalFlipY',
-                    'RoughnessMin', 'RoughnessMax', 'MetallicScale', 'CavityContrast', 'HeightBias',
+                    'RoughnessMin', 'RoughnessMax', 'MetallicScale', 'TransmissionScale',
+                    'CavityContrast', 'HeightBias',
                     'HueShift', 'Saturation', 'Value', 'Contrast']
     grade = custom(fn, _CODE_LAYER_GRADE, CMOT.CMOT_FLOAT3, grade_inputs,
                    [('OutNormal', CMOT.CMOT_FLOAT3), ('OutRoughness', CMOT.CMOT_FLOAT1),
-                    ('OutMetallic', CMOT.CMOT_FLOAT1), ('OutCavity', CMOT.CMOT_FLOAT1),
-                    ('OutHeight', CMOT.CMOT_FLOAT1)],
+                    ('OutMetallic', CMOT.CMOT_FLOAT1), ('OutTransmission', CMOT.CMOT_FLOAT1),
+                    ('OutCavity', CMOT.CMOT_FLOAT1), ('OutHeight', CMOT.CMOT_FLOAT1)],
                    100, -300, 'Grade the sampled layer')
     for pin in grade_inputs:
         if pin in finals:
@@ -562,7 +570,8 @@ def build_layer_function():
         else:
             link(ins[pin], '', grade, pin)
 
-    outs = ['', 'OutNormal', 'OutRoughness', 'OutMetallic', 'OutCavity', 'OutHeight']
+    outs = ['', 'OutNormal', 'OutRoughness', 'OutMetallic', 'OutTransmission', 'OutCavity',
+            'OutHeight']
     for i, name in enumerate(_LAYER_OUTPUTS):
         link(grade, outs[i], fn_output(fn, name, 500, -300 + 60 * i, i), '')
 
@@ -582,6 +591,7 @@ float3 W = MobLayerWeights3(Height0, Height1, Height2, Weight1, Weight2, Contras
 OutNormal = MobBlendNormal3(Normal0, Normal1, Normal2, W);
 OutRoughness = saturate(dot(float3(Roughness0, Roughness1, Roughness2), W));
 OutMetallic = saturate(dot(float3(Metallic0, Metallic1, Metallic2), W));
+OutTransmission = saturate(dot(float3(Transmission0, Transmission1, Transmission2), W));
 OutCavity = saturate(dot(float3(Cavity0, Cavity1, Cavity2), W));
 OutHeight = saturate(dot(float3(Height0, Height1, Height2), W));
 OutWeights = W;
@@ -649,18 +659,21 @@ def build_blend_function():
     blend_inputs += ['Weight1', 'Weight2', 'Contrast', 'HeightAmount']
     blend = custom(fn, _CODE_BLEND3, CMOT.CMOT_FLOAT3, blend_inputs,
                    [('OutNormal', CMOT.CMOT_FLOAT3), ('OutRoughness', CMOT.CMOT_FLOAT1),
-                    ('OutMetallic', CMOT.CMOT_FLOAT1), ('OutCavity', CMOT.CMOT_FLOAT1),
-                    ('OutHeight', CMOT.CMOT_FLOAT1), ('OutWeights', CMOT.CMOT_FLOAT3)],
+                    ('OutMetallic', CMOT.CMOT_FLOAT1), ('OutTransmission', CMOT.CMOT_FLOAT1),
+                    ('OutCavity', CMOT.CMOT_FLOAT1), ('OutHeight', CMOT.CMOT_FLOAT1),
+                    ('OutWeights', CMOT.CMOT_FLOAT3)],
                    -200, -300, 'Height-aware three way blend')
     for pin in blend_inputs:
         src = routed.get(pin, ins.get(pin))
         link(src, '', blend, pin)
 
-    outs = ['', 'OutNormal', 'OutRoughness', 'OutMetallic', 'OutCavity', 'OutHeight']
+    outs = ['', 'OutNormal', 'OutRoughness', 'OutMetallic', 'OutTransmission', 'OutCavity',
+            'OutHeight']
     for i, name in enumerate(_LAYER_OUTPUTS):
         link(blend, outs[i], fn_output(fn, name, 200, -300 + 60 * i, i), '')
     # Only the blend knows these, and a debug view of a weight is the whole point of having one.
-    link(blend, 'OutWeights', fn_output(fn, 'Weights', 200, 60, len(_LAYER_OUTPUTS)), '')
+    link(blend, 'OutWeights', fn_output(fn, 'Weights', 200, -300 + 60 * len(_LAYER_OUTPUTS),
+                                        len(_LAYER_OUTPUTS)), '')
 
     _finish_fn(fn)
     save(fn)
@@ -735,9 +748,27 @@ return MobWind(WorldPos, ObjectPos, Direction, Time, Strength, Speed,
                FlutterStrength, FlutterSpeed, Weight);
 """
 
+_CODE_TRANSMISSION = """
+return MobTransmission(Color, Mask, Amount);
+"""
+
+TRANSMISSION_AMOUNT_DESC = (
+    'How much light comes through the leaf, over the whole plant. The subsurface colour already '
+    'carries an amount in how bright it is; this is the one knob to reach for once that colour is '
+    'the colour you want.'
+)
+
+TRANSMISSION_MAP_DESC = (
+    'Reads the blue channel of the CRM as how thin the surface is, so a leaf tip glows and a stem '
+    'or a vein stays opaque. Off, the whole plant transmits alike.\n\n'
+    'Off by default because blue is metallic on every other master, and art repacked from an ORM '
+    'has metallic zero there. Turning this on against such a pack puts no light through the plant '
+    'at all. Repack blue as transmission first: Mob > Remap Texture Channels, target CRT.'
+)
+
 _CODE_DEBUG = """
 return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour,
-                    Trample, Accumulation) * max(Exposure, 0.0f);
+                    Trample, Accumulation, Transmission) * max(Exposure, 0.0f);
 """
 
 DEBUG_ENUM = '/Script/MobMaterials.EMobDebugView'
@@ -1261,6 +1292,7 @@ _LAYER_DEFAULTS = {
     'RoughnessMin': [0.0, 0.0, 0.0],
     'RoughnessMax': [1.0, 1.0, 1.0],
     'MetallicScale': [1.0, 1.0, 1.0],
+    'TransmissionScale': [1.0, 1.0, 1.0],
     'CavityContrast': [1.0, 1.0, 1.0],
     'HeightBias': [0.0, 0.0, 0.0],
     'HueShift': [0.0, 0.0, 0.0],
@@ -1276,9 +1308,13 @@ def _build_layer_block(mat, index, shared, x, y):
     group = _LAYER_GROUPS[index]
     call = _fn_call(mat, FN_ROOT + '/MF_MobSurfaceLayer', x + 700, y)
 
+    # The function input is CRM either way; the parameter is named for what this master reads out
+    # of blue, so a foliage instance asks for the pack it actually wants.
     for pin, default_path, sort in (('BC', BASE_TEX_BC, 0), ('NRM', BASE_TEX_NRM, 1),
                                     ('CRM', BASE_TEX_CRM, 2)):
-        tex = _param_texture(mat, '%s_%s' % (layer, pin), default_path, group, x, y + 80 * sort, sort)
+        param = 'CRT' if (pin == 'CRM' and FOLIAGE) else pin
+        tex = _param_texture(mat, '%s_%s' % (layer, param), default_path, group, x,
+                             y + 80 * sort, sort)
         link(tex, '', call, pin)
 
     link(shared['uv'], '', call, 'UV')
@@ -1292,6 +1328,11 @@ def _build_layer_block(mat, index, shared, x, y):
         if name.startswith('TileBreak') and not INCLUDE_TILE_BREAK:
             continue
         if name.startswith('Parallax') and not INCLUDE_PARALLAX:
+            continue
+        # Blue is one channel and each master reads it as one thing.
+        if name == 'MetallicScale' and FOLIAGE:
+            continue
+        if name == 'TransmissionScale' and not FOLIAGE:
             continue
         value = _LAYER_DEFAULTS[name][index]
         link(_param_scalar(mat, '%s_%s' % (layer, name), value, group, x, yy, sort), '', call, name)
@@ -1765,9 +1806,23 @@ def build_master_material():
         MEL.connect_material_property(gate, '', MP.MP_WORLD_POSITION_OFFSET)
 
         # Two-sided foliage reads this as the colour of light coming through a leaf.
-        MEL.connect_material_property(
-            _param_vector(mat, 'SubsurfaceColor', (0.15, 0.35, 0.08), GROUP_FOLIAGE, -1000, 1300, 10),
-            '', MP.MP_SUBSURFACE_COLOR)
+        sss_color = _param_vector(mat, 'SubsurfaceColor', (0.15, 0.35, 0.08), GROUP_FOLIAGE,
+                                  -1000, 1300, 10)
+        sss_amount = _param_scalar(mat, 'TransmissionAmount', 1.0, GROUP_FOLIAGE, -1000, 1350, 11,
+                                   desc=TRANSMISSION_AMOUNT_DESC)
+
+        even = _expr(mat, unreal.MaterialExpressionConstant, -700, 1450)
+        even.set_editor_property('r', 1.0)
+        mask = _switch_param(mat, 'bTransmissionMap', blend, 'Transmission', even, '',
+                             GROUP_FOLIAGE, -500, 1400, desc=TRANSMISSION_MAP_DESC)
+
+        sss = custom(mat, _CODE_TRANSMISSION, CMOT.CMOT_FLOAT3, ['Color', 'Mask', 'Amount'], [],
+                     -300, 1400, 'Transmission')
+        link(sss_color, '', sss, 'Color')
+        link(mask, '', sss, 'Mask')
+        link(sss_amount, '', sss, 'Amount')
+
+        MEL.connect_material_property(sss, '', MP.MP_SUBSURFACE_COLOR)
 
     # --- debug ------------------------------------------------------------
     base_src, base_out = final, 'BaseColor'
@@ -1776,7 +1831,7 @@ def build_master_material():
     if INCLUDE_DEBUG:
         dbg = custom(mat, _CODE_DEBUG, CMOT.CMOT_FLOAT3,
                      ['Mode', 'Weights', 'Cavity', 'Normal', 'Wetness', 'Height', 'VertexColour',
-                      'Trample', 'Accumulation', 'Exposure'],
+                      'Trample', 'Accumulation', 'Transmission', 'Exposure'],
                      [], 300, 800, 'Debug view')
         link(_param_scalar(mat, 'DebugMode', 1.0, GROUP_DEBUG, 0, 800, 1,
                            desc=DEBUG_MODE_DESC, enum=DEBUG_ENUM), '', dbg, 'Mode')
@@ -1790,7 +1845,8 @@ def build_master_material():
         link(vcol, '', dbg, 'VertexColour')
 
         for pin, src, out in (('Trample', trample_mask, ''),
-                              ('Accumulation', acc if INCLUDE_ACCUMULATION else None, 'OutMask')):
+                              ('Accumulation', acc if INCLUDE_ACCUMULATION else None, 'OutMask'),
+                              ('Transmission', blend if FOLIAGE else None, 'Transmission')):
             if src is None:
                 src, out = _expr(mat, unreal.MaterialExpressionConstant, 0, 950), ''
                 src.set_editor_property('r', 0.0)
@@ -1813,7 +1869,14 @@ def build_master_material():
     MEL.connect_material_property(final, 'Normal', MP.MP_NORMAL)
     MEL.connect_material_property(final, 'Roughness', MP.MP_ROUGHNESS)
     MEL.connect_material_property(final, 'Specular', MP.MP_SPECULAR)
-    MEL.connect_material_property(blend, 'Metallic', MP.MP_METALLIC)
+
+    # On a foliage master the blue channel is transmission, and a plant is not metal either way.
+    if FOLIAGE:
+        no_metal = _expr(mat, unreal.MaterialExpressionConstant, 300, 500)
+        no_metal.set_editor_property('r', 0.0)
+        MEL.connect_material_property(no_metal, '', MP.MP_METALLIC)
+    else:
+        MEL.connect_material_property(blend, 'Metallic', MP.MP_METALLIC)
     MEL.connect_material_property(emissive_src, emissive_out, MP.MP_EMISSIVE_COLOR)
     MEL.connect_material_property(mask_tex, 'A', MP.MP_OPACITY_MASK)
     # Ambient occlusion is deliberately left at 1. Cavity is already in BaseColor and Specular, and

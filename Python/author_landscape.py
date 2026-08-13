@@ -1639,8 +1639,9 @@ return max(Base, 1.0f - saturate(Painted));
 
 
 _CODE_DEBUG = """
+// Terrain has no transmission: the blue channel of a landscape layer is cavity, not a thickness.
 return MobDebugView((int)Mode, Weights, Cavity, Normal, Wetness, Height, VertexColour,
-                    Trample, Accumulation) * max(Exposure, 0.0f);
+                    Trample, Accumulation, 0.0f) * max(Exposure, 0.0f);
 """
 
 DEBUG_ENUM = '/Script/MobMaterials.EMobDebugView'

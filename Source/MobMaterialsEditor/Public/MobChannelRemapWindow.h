@@ -26,8 +26,15 @@ enum class EMobRemapTarget : uint8
 	/** Height, Roughness, Cavity. What a landscape layer reads. */
 	HRC		UMETA(DisplayName = "HRC (landscape)"),
 
-	/** Cavity, Roughness, Metallic. What a surface or foliage material reads. */
-	CRM		UMETA(DisplayName = "CRM (surface, foliage)"),
+	/** Cavity, Roughness, Metallic. What a surface material reads. */
+	CRM		UMETA(DisplayName = "CRM (surface)"),
+
+	/**
+	 * Cavity, Roughness, Transmission. What a foliage material reads: the same pack as a CRM, with
+	 * how thin the surface is where a surface material keeps metallic. A plant is never metal, so
+	 * that channel would otherwise be a sample paid for and thrown away.
+	 */
+	CRT		UMETA(DisplayName = "CRT (foliage)"),
 
 	/**
 	 * Metallic, Roughness, Ambient Occlusion. Nothing here reads it - the masters take cavity, not
@@ -122,6 +129,17 @@ public:
 	TObjectPtr<UTexture2D> CavityTexture = nullptr;
 
 	/**
+	 * How much light the surface lets through, white for a leaf tip and black for a stem or a vein.
+	 *
+	 * No packed layout carries one, so a CRT leaves this channel white without a map, which is the
+	 * whole plant transmitting alike - what a foliage material does anyway until an instance turns
+	 * the map on. A thickness map is the same signal inverted; tick Invert on the blue slot.
+	 */
+	UPROPERTY(EditAnywhere, Category="Remap",
+		meta=(EditCondition="Source == EMobRemapSource::Separate", EditConditionHides))
+	TObjectPtr<UTexture2D> TransmissionTexture = nullptr;
+
+	/**
 	 * Ambient occlusion, if the art has it.
 	 *
 	 * It is deliberately not wired to anything by a preset. These materials have no AO input: the
@@ -132,15 +150,15 @@ public:
 		meta=(EditCondition="Source == EMobRemapSource::Separate", EditConditionHides))
 	TObjectPtr<UTexture2D> OcclusionTexture = nullptr;
 
-	/** Height on an HRC, cavity on a CRM. */
+	/** Height on an HRC, cavity on a CRM or a CRT. */
 	UPROPERTY(EditAnywhere, Category="Output Channels", meta=(DisplayName="Red"))
 	FMobChannelSource Red;
 
-	/** Roughness on both. */
+	/** Roughness on all of them. */
 	UPROPERTY(EditAnywhere, Category="Output Channels", meta=(DisplayName="Green"))
 	FMobChannelSource Green;
 
-	/** Cavity on an HRC, metallic on a CRM. */
+	/** Cavity on an HRC, metallic on a CRM, transmission on a CRT. */
 	UPROPERTY(EditAnywhere, Category="Output Channels", meta=(DisplayName="Blue"))
 	FMobChannelSource Blue;
 

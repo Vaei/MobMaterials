@@ -5,7 +5,10 @@
 // Helpers for the prop, environment and building master material. Included from Custom nodes as
 // /MobMaterials/Public/MobSurface.ush.
 //
-// The texture pack is BaseColor + Normal + CRM, where CRM is Cavity, Roughness, Metallic. There is
+// The texture pack is BaseColor + Normal + CRM, where CRM is Cavity, Roughness, Metallic - or CRT,
+// Cavity, Roughness, Transmission, on a foliage master, which reads that third channel as how thin
+// the surface is rather than how metal it is. Nothing about the sampling changes; see
+// MobTransmission. There is
 // no AO channel on purpose: the renderer supplies its own occlusion and a baked AO on top of it
 // darkens twice. Cavity takes that slot and also stands in as the height field for layer blending,
 // so height blending needs no extra texture.
@@ -361,6 +364,22 @@ float3 MobWind(float3 WorldPos, float3 ObjectPos, float3 Direction, float Time,
 		* FlutterStrength * Reach;
 
 	return Dir * Sway + Side * Flutter;
+}
+
+// ---------------------------------------------------------------------------
+// Transmission
+// ---------------------------------------------------------------------------
+
+/**
+ * Colour of the light coming through a leaf, for the two-sided foliage shading model.
+ *
+ * Mask is how thin the surface is, taken from the blue channel a standard master reads as metallic.
+ * A plant is never metal, so that channel is free, and a thickness in it is what separates a tip
+ * that glows from a stem that does not - which a single colour for the whole plant cannot say.
+ */
+float3 MobTransmission(float3 Color, float Mask, float Amount)
+{
+	return max(Color * saturate(Mask) * max(Amount, 0.0f), 0.0f);
 }
 
 // ---------------------------------------------------------------------------

@@ -41,4 +41,10 @@ enum class EMobDebugView : uint8
 
 	/** Where snow, dust or ash has settled, in blue. */
 	Accumulation = 8,
+
+	/**
+	 * How much light the surface lets through, from the blue channel of the CRM. Foliage only:
+	 * black everywhere else, where that channel is metallic instead.
+	 */
+	Transmission = 9,
 };

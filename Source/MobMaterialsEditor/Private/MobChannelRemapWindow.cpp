@@ -165,12 +165,21 @@ void UMobChannelRemapOptions::ApplyPreset()
 		Red = Slot(Source == EMobRemapSource::Separate ? HeightTexture.Get() : nullptr,
 			EMobTextureChannel::R, 0.5f);
 		Blue = Slot(Cavity, CavityChannel, 1.f);
+		return;
 	}
-	else
+
+	Red = Slot(Cavity, CavityChannel, 1.f);
+
+	if (Target == EMobRemapTarget::CRT)
 	{
-		Red = Slot(Cavity, CavityChannel, 1.f);
-		Blue = Slot(Metal, MetalChannel, 0.f);
+		// White without a map, so a pack that has no thickness in it transmits evenly rather than
+		// not at all. Nothing packed carries one, so only a separate map ever fills this.
+		Blue = Slot(Source == EMobRemapSource::Separate ? TransmissionTexture.Get() : nullptr,
+			EMobTextureChannel::R, 1.f);
+		return;
 	}
+
+	Blue = Slot(Metal, MetalChannel, 0.f);
 }
 
 #if WITH_EDITOR
@@ -187,6 +196,7 @@ void UMobChannelRemapOptions::PostEditChangeProperty(FPropertyChangedEvent& Prop
 		GET_MEMBER_NAME_CHECKED(UMobChannelRemapOptions, MetallicTexture),
 		GET_MEMBER_NAME_CHECKED(UMobChannelRemapOptions, HeightTexture),
 		GET_MEMBER_NAME_CHECKED(UMobChannelRemapOptions, CavityTexture),
+		GET_MEMBER_NAME_CHECKED(UMobChannelRemapOptions, TransmissionTexture),
 	};
 
 	if (Triggers.Contains(PropertyChangedEvent.GetPropertyName()))
@@ -214,6 +224,7 @@ FString FMobChannelRemapWindow::TargetSuffix(EMobRemapTarget Target)
 	{
 	case EMobRemapTarget::HRC:	return TEXT("HRC");
 	case EMobRemapTarget::CRM:	return TEXT("CRM");
+	case EMobRemapTarget::CRT:	return TEXT("CRT");
 	case EMobRemapTarget::MRAO:	return TEXT("MRAO");
 	default:					return TEXT("Packed");
 	}
@@ -251,6 +262,15 @@ FText FMobChannelRemapWindow::Warning(const UMobChannelRemapOptions& Options)
 	if (IsIdentityCopy(Options, Reason))
 	{
 		return Reason;
+	}
+
+	if (Options.Target == EMobRemapTarget::CRT && !Options.Blue.Texture)
+	{
+		return LOCTEXT("RemapNoTransmission",
+			"Nothing is going into the transmission channel, so every texel of the plant lets the same "
+			"amount of light through - which is what a foliage material already does with the map "
+			"turned off. Point the blue slot at a transmission or thickness map, or there is no reason "
+			"to pack a CRT rather than use the CRM you have.");
 	}
 
 	if (Options.bCavityFromOcclusion)
@@ -321,7 +341,8 @@ UTexture2D* FMobChannelRemapWindow::Remap(const UMobChannelRemapOptions& Options
 		// The first source's name with a recognised map suffix swapped for this one.
 		Name = Sources[0]->GetName();
 		for (const TCHAR* Suffix : { TEXT("_ORM"), TEXT("_MRAO"), TEXT("_RMA"), TEXT("_Roughness"),
-			TEXT("_Metallic"), TEXT("_Height"), TEXT("_Cavity"), TEXT("_AO"), TEXT("_OcclusionRoughnessMetallic") })
+			TEXT("_Metallic"), TEXT("_Height"), TEXT("_Cavity"), TEXT("_AO"), TEXT("_Transmission"),
+			TEXT("_Thickness"), TEXT("_OcclusionRoughnessMetallic") })
 		{
 			if (Name.EndsWith(Suffix))
 			{

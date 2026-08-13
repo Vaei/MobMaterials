@@ -167,6 +167,11 @@ public:
 	 * Authors a foliage master instead of a standard one: masked, two-sided, two-sided-foliage
 	 * shading, subsurface colour, and wind on world position offset.
 	 *
+	 * It also reads the blue channel of the CRM as transmission rather than metallic, since a plant
+	 * is never metal and a thickness there is what separates a tip that glows from a stem that does
+	 * not. Off until an instance ticks Transmission Map: art repacked from an ORM has metallic zero
+	 * in that channel, which would put no light through the plant at all.
+	 *
 	 * This cannot be a switch on the standard master. Shading model, two-sidedness and blend mode
 	 * are material properties rather than parameters, so foliage has to be a material of its own -
 	 * which is the right shape anyway, since it wants different defaults the whole way down.
