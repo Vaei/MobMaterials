@@ -144,6 +144,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Trample|Advanced", meta=(ClampMin="0.01"))
 	float FlushInterval = 0.1f;
 
+	/**
+	 * Skips a flush where no print has faded far enough to come out any different.
+	 *
+	 * A print is drawn at one of sixteen depths, so most of what a fade does between one flush and
+	 * the next redraws the same image. Turning this off flushes on any change at all, which is the
+	 * same picture reached the expensive way.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Trample|Advanced", AdvancedDisplay)
+	bool bSkipUnchangedRedraws = true;
+
+	/**
+	 * Throws away only the terrain pages over the prints that changed, rather than every page over
+	 * the volume.
+	 *
+	 * Turn this off if a print ever shows up outside the area it covers, which would mean something
+	 * downstream reads the target further out than the print is wide.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Trample|Advanced", AdvancedDisplay)
+	bool bInvalidateChangedAreaOnly = true;
+
 	/** Whether a world position is over this volume. Z is ignored: the mask is projected down. */
 	UFUNCTION(BlueprintPure, Category="Trample")
 	bool Covers(const FVector& WorldLocation) const;
@@ -227,6 +247,9 @@ private:
 	/** Writes a print into the CPU mirror GetTrampleAt reads. */
 	void StampMirror(const FVector& WorldLocation, float Radius, float Strength);
 
+	/** World box one print covers, which is the area a change to it makes stale. */
+	static FBox MarkBounds(const FMobTrampleStamp& Mark, double HalfHeight);
+
 	/** Throws away the terrain's cached pages over an area, so a print drawn now is a print seen now. */
-	void InvalidateVirtualTextures(const FBox& WorldBounds);
+	void InvalidateVirtualTextures(const FBox& WorldBounds, bool bAllWorlds = false);
 };

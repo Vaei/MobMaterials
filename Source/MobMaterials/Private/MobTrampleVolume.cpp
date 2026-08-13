@@ -17,6 +17,12 @@ namespace
 	constexpr int32 MobTrampleStrengthBuckets = 16;
 
 	const FName MobTrampleStrengthParam(TEXT("Strength"));
+
+	int32 MobTrampleStrengthBucket(float Strength)
+	{
+		return FMath::Clamp(FMath::RoundToInt(Strength * (MobTrampleStrengthBuckets - 1)),
+			0, MobTrampleStrengthBuckets - 1);
+	}
 }
 
 AMobTrampleVolume::AMobTrampleVolume()
@@ -48,6 +54,10 @@ void AMobTrampleVolume::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		Subsystem->UnregisterVolume(this);
 	}
+
+	// The target is an asset the editor viewport keeps sampling once play stops, so prints left in
+	// it outlive the session that made them.
+	ClearMask();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -99,6 +109,13 @@ void AMobTrampleVolume::ClearMask()
 	Marks.Reset();
 	PendingBounds = FBox(ForceInit);
 	Mirror.Reset();
+
+	// The target is one asset, so a world that is not this one may still be showing what was in it.
+	// This is the only path where that is true, and the only one that pays for a whole-volume pass.
+	if (Bounds)
+	{
+		InvalidateVirtualTextures(Bounds->Bounds.GetBox(), true);
+	}
 }
 
 void AMobTrampleVolume::AddStamp(const FVector& WorldLocation, float Radius, float Strength,
@@ -224,7 +241,13 @@ float AMobTrampleVolume::GetTrampleAt(const FVector& WorldLocation) const
 	return Mirror[Y * MirrorSize + X] / 255.f;
 }
 
-void AMobTrampleVolume::InvalidateVirtualTextures(const FBox& WorldBounds)
+FBox AMobTrampleVolume::MarkBounds(const FMobTrampleStamp& Mark, double HalfHeight)
+{
+	const FVector Half(Mark.WorldRadius, Mark.WorldRadius, HalfHeight);
+	return FBox(Mark.World - Half, Mark.World + Half);
+}
+
+void AMobTrampleVolume::InvalidateVirtualTextures(const FBox& WorldBounds, bool bAllWorlds)
 {
 	if (!WorldBounds.IsValid)
 	{
@@ -235,17 +258,21 @@ void AMobTrampleVolume::InvalidateVirtualTextures(const FBox& WorldBounds)
 	for (TObjectIterator<URuntimeVirtualTextureComponent> It; It; ++It)
 	{
 		URuntimeVirtualTextureComponent* Component = *It;
-		if (Component && Component->GetWorld() == GetWorld() && Component->IsRegistered())
+		if (!Component || !Component->IsRegistered())
 		{
-			Component->Invalidate(Dirty);
+			continue;
 		}
+		if (!bAllWorlds && Component->GetWorld() != GetWorld())
+		{
+			continue;
+		}
+		Component->Invalidate(Dirty);
 	}
 }
 
 UMaterialInstanceDynamic* AMobTrampleVolume::StampInstanceFor(float Strength)
 {
-	const int32 Bucket = FMath::Clamp(FMath::RoundToInt(Strength * (MobTrampleStrengthBuckets - 1)),
-		0, MobTrampleStrengthBuckets - 1);
+	const int32 Bucket = MobTrampleStrengthBucket(Strength);
 
 	if (const TObjectPtr<UMaterialInstanceDynamic>* Existing = StampVariants.Find(Bucket))
 	{
@@ -286,21 +313,30 @@ void AMobTrampleVolume::FlushNow(float Elapsed)
 
 	// Ages advance whether or not anything is drawn, so a print left while the camera was elsewhere
 	// is as old as it should be when it is next looked at.
+	const double HalfHeight = Bounds ? Bounds->GetScaledBoxExtent().Z : 0.0;
+	FBox Dirty = PendingBounds;
 	bool bAnyFading = false;
+
 	for (int32 i = Marks.Num() - 1; i >= 0; --i)
 	{
 		const float Was = StrengthOf(Marks[i]);
 		Marks[i].Age += Elapsed;
 		const float Now = StrengthOf(Marks[i]);
 
-		if (Now <= 1.f / 255.f)
+		const bool bGone = Now <= 1.f / 255.f;
+		const bool bFaded = bSkipUnchangedRedraws
+			? MobTrampleStrengthBucket(Was) != MobTrampleStrengthBucket(Now)
+			: !FMath::IsNearlyEqual(Was, Now);
+
+		if (bGone || bFaded)
 		{
-			Marks.RemoveAt(i);
+			Dirty += MarkBounds(Marks[i], HalfHeight);
 			bAnyFading = true;
 		}
-		else if (!FMath::IsNearlyEqual(Was, Now))
+
+		if (bGone)
 		{
-			bAnyFading = true;
+			Marks.RemoveAt(i);
 		}
 	}
 
@@ -310,9 +346,15 @@ void AMobTrampleVolume::FlushNow(float Elapsed)
 	}
 
 	Marks.Append(Pending);
-	if (Marks.Num() > FMath::Max(MaxMarks, 16))
+	const int32 Cap = FMath::Max(MaxMarks, 16);
+	if (Marks.Num() > Cap)
 	{
-		Marks.RemoveAt(0, Marks.Num() - FMath::Max(MaxMarks, 16));
+		const int32 Dropped = Marks.Num() - Cap;
+		for (int32 i = 0; i < Dropped; ++i)
+		{
+			Dirty += MarkBounds(Marks[i], HalfHeight);
+		}
+		Marks.RemoveAt(0, Dropped);
 	}
 
 	// Redrawn from the list rather than decayed in place. A print's own age decides what it is
@@ -346,8 +388,8 @@ void AMobTrampleVolume::FlushNow(float Elapsed)
 		StampMirror(Mark.World, Mark.WorldRadius, StrengthOf(Mark));
 	}
 
-	// A redraw touches everything, so everything the terrain cached over this volume is now wrong.
-	InvalidateVirtualTextures(bAnyFading ? Bounds->Bounds.GetBox() : PendingBounds);
+	InvalidateVirtualTextures(!bInvalidateChangedAreaOnly && bAnyFading && Bounds
+		? Bounds->Bounds.GetBox() : Dirty);
 	PendingBounds = FBox(ForceInit);
 	Pending.Reset();
 }

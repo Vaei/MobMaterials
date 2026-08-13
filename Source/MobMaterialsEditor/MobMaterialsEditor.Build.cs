@@ -40,6 +40,7 @@ public class MobMaterialsEditor : ModuleRules
 				"MaterialEditor",
 				"Json",
 				"AppFramework",
+				"ToolWidgets",
 			}
 			);
 	}
