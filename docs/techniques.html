@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Techniques &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Techniques</h1>
+<p class="lede">Each of the expensive-sounding features, what it is actually for, when it is the wrong answer, and which number to turn to get a specific result. <a href="surface.html">Surface</a> and <a href="landscape.html">Landscape</a> list every parameter; this page decides which ones you should be touching.</p>
+
+<h2>Start here</h2>
+
+<div class="tw"><table class="free">
+<thead><tr><th>What you are looking at</th><th>Reach for</th></tr></thead>
+<tbody>
+<tr><td>A grid, visible from 10-40 m</td><td><a href="#dual-scale">Dual scale</a> on the terrain, <a href="#distance-tiling-break">tiling break</a> on meshes</td></tr>
+<tr><td>A grid still visible after that, on the layer covering most of the screen</td><td><a href="#stochastic-hex-tiling">Hex tiling</a></td></tr>
+<tr><td>A large area reading as one flat tone</td><td><a href="#macro-variation">Macro variation</a></td></tr>
+<tr><td>Stretched or smeared texture on a kitbashed rock</td><td><a href="#triplanar">Triplanar</a></td></tr>
+<tr><td>Two materials meeting along a soft grey band</td><td><a href="#height-blending">Height blending</a></td></tr>
+<tr><td>A surface that goes soft the moment you walk up to it</td><td><a href="#detail-normals">Detail normals</a></td></tr>
+<tr><td>Flat brick or cobbles at a grazing angle</td><td><a href="#parallax">Parallax</a></td></tr>
+<tr><td>Every copy of a prop identical</td><td><a href="#per-instance-variation">Per-instance variation</a></td></tr>
+<tr><td>Meshes cutting a hard line into the ground</td><td><a href="#rvt-blending">RVT blending</a></td></tr>
+<tr><td>Distant surfaces crawling and sparkling in motion</td><td><a href="#the-distance-clamp">The distance clamp</a></td></tr>
+</tbody>
+</table></div>
+
+<h2>Triplanar</h2>
+
+<p>Samples the texture three times, once per world axis, and weights the three by the surface normal. World-aligned, so it needs no UVs at all and survives non-uniform scale.</p>
+
+<div class="tw"><table class="free">
+<thead><tr><th>Use it</th><th>Do not</th></tr></thead>
+<tbody>
+<tr><td>Kitbashed and boolean geometry with no usable UVs</td><td>Anything with good UVs. It is 3x the taps for no gain</td></tr>
+<tr><td>Rocks and cliffs, where a seam would be obvious and UV work is expensive</td><td>Anything rotated <i>and</i> non-uniformly scaled - it is world-aligned by definition and does not turn with the object, so the texture swims</td></tr>
+<tr><td>Modular kits reused at many scales, so one material serves all of them</td><td>Meshes that need the texture to follow a form, like a face or a fabric fold</td></tr>
+<tr><td>Terrain-matching props, so the world grain runs continuously through them</td><td>Foliage cards</td></tr>
+</tbody>
+</table></div>
+
+<div class="tw"><table>
+<thead><tr><th>Tune</th><th></th></tr></thead>
+<tbody>
+<tr><td><code>TriplanarScale</code></td><td>world units per UV. <b>1 &divide; tile size in cm</b>. Set it from your texel density, not by eye</td></tr>
+<tr><td><code>TriplanarSharpness</code></td><td>how narrowly the three projections crossfade. <b>4</b> is a good default. Lower blurs a wide band across every 45&deg; face; much higher makes the transition a visible line</td></tr>
+</tbody>
+</table></div>
+
+<div class="note">
+Normals are reoriented per projection rather than blended flat, so a triplanar surface keeps its normal detail on all three axes instead of going soft where they meet.
+</div>
+
+<p><b>Per layer, not per material.</b> A rock can be triplanar on its base layer and mesh-UV on the moss layer painted over it.</p>
+
+<div data-shot="techniques.projection"></div>
+
+<h2>Killing repetition</h2>
+
+<p>Four tiers, per layer, chosen by static bools so an unused tier is not in the shader at all. They go up in cost and in how completely they work. Pick the cheapest one that solves what you can actually see.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Tier</th><th>Taps</th><th></th></tr></thead>
+<tbody>
+<tr><td><b>None</b></td><td>1</td><td>straight sample</td></tr>
+<tr><td><b>Cheap</b></td><td>1</td><td>modulated by the macro noise the master samples once for every layer. Free, and it breaks the low frequency only</td></tr>
+<tr><td><b>Dual</b></td><td>2</td><td>a second scale overlaid. The default, and the right answer for most layers</td></tr>
+<tr><td><b>Hex</b></td><td>3</td><td>stochastic hex-tile sampling. No repeat survives it, at any distance</td></tr>
+</tbody>
+</table></div>
+
+<div data-shot="techniques.tiers"></div>
+
+<h3>Dual scale</h3>
+
+<p>The same texture sampled again at an incommensurate scale and combined as an <b>overlay</b>, not a lerp. That distinction is the whole trick: a lerp of two scales halves the contrast and reads as blur, trading one artefact for another. Overlay keeps the detail and only disturbs the low frequency that made the repeat visible.</p>
+
+<div class="tw"><table>
+<tr><td><code>SecondScale</code></td><td><b>0.37</b>, not <b>0.5</b>. Keep it awkward, or the two repeats line up and you have built a larger grid</td></tr>
+<tr><td><code>Amount</code></td><td>how far the second tiling pushes. 1 is fine; drop it if the layer starts to look noisy</td></tr>
+</table></div>
+
+<p>On by default on every landscape layer. Turn it off only for a layer that never covers enough screen to repeat.</p>
+
+<h3>Stochastic hex tiling</h3>
+
+<p>The lattice is hexagonal, not square. Each cell samples the texture with its own random offset and rotation, and every pixel blends the three cells it falls between - so the pattern that repeats is the hex lattice, which has no visual signature of its own, rather than the texture.</p>
+
+<p>This is the modern form of what used to be called <b>texture bombing</b> or cell bombing. Bombing stamped decorated patches over a base and left visible patch edges and a stamp rate to tune. Hex tiling has no base, no stamps, and no seams - every pixel is a blend of three taps and the cost is fixed at three, whatever the content.</p>
+
+<div class="tw"><table class="free">
+<thead><tr><th>Use it</th><th>Do not</th></tr></thead>
+<tbody>
+<tr><td>The one or two layers covering the most screen: grass, dirt, sand</td><td>On every layer. Three taps each adds up fast, and a layer painted in patches never repeats anyway</td></tr>
+<tr><td>Ground seen from a distance where the grid would otherwise be unmissable</td><td>Textures with strong directional features - planks, bricks, tiles. Random rotation destroys them</td></tr>
+<tr><td>Large open terrain with few layers</td><td>Meshes. The surface master uses the distance tiling break instead</td></tr>
+</tbody>
+</table></div>
+
+<div class="important">
+Blending three taps averages the texture's variance away, so the layer comes out washed out and sits flat next to everything else. <code>VarianceRestore</code> pushes the result back out from the mean, and <code>MeanColor</code> has to be <b>that texture's actual average colour</b> - the shader cannot know it. Set it wrong and the layer shifts hue as well as contrast.
+</div>
+
+<div class="tw"><table>
+<tr><td><code>MeanColor</code></td><td>the source texture's average. Sample it in your image editor at the smallest mip</td></tr>
+<tr><td><code>VarianceRestore</code></td><td><b>1</b> restores fully. Lower it if the result looks over-contrasted rather than merely un-washed</td></tr>
+<tr><td><code>RotationAmount</code></td><td><b>1</b> is full random rotation. Drop toward 0 for a texture with a direction it needs to keep, but then expect less of the repeat to be hidden</td></tr>
+<tr><td><code>BlendContrast</code></td><td><b>4</b>. How sharply the three cells hand over. Too low and cells cross-fade into mush; too high and cell edges appear</td></tr>
+</table></div>
+
+<div data-shot="techniques.hex-variance"></div>
+
+<div class="warn">
+Every tier takes explicit gradients. The layer samplers are Shared:Wrap, so an implicit sample inside a Custom node takes its derivatives from the wrong place once UVs are rotated or offset per cell, and mip selection fights the coordinates across a cell seam. If you see mip seams tracing hex cells, a tap has lost its gradients.
+</div>
+
+<h3>Distance tiling break</h3>
+
+<p>The mesh equivalent, and it is bound to distance on purpose: a repeat only becomes visible once enough tiles are on screen at once. Near, the surface keeps the detail it was authored with. Far, the grid dissolves.</p>
+
+<div class="tw"><table>
+<tr><td><code>TileBreakScale</code></td><td><b>0.37</b>, <b>0.41</b>, <b>0.53</b> per layer by default. Irrational-ish, for the same reason as dual scale</td></tr>
+<tr><td><code>TileBreakStart</code> / <code>TileBreakFalloff</code></td><td><b>1500</b> / <b>4000</b> cm. Move Start in if the grid is visible sooner than that; it usually is on a large flat floor</td></tr>
+<tr><td><code>TileBreakAmount</code></td><td><b>0.7</b>. Push to 1 for a surface that is nothing but tiling</td></tr>
+</table></div>
+
+<p><b>Mesh-UV only.</b> With triplanar on it does nothing, deliberately: that already samples three ways, and breaking it too would be nine taps to solve a repeat the projection has largely hidden. Three extra samples on any layer that uses it.</p>
+
+<div data-shot="techniques.tilebreak-distance"></div>
+
+<h2>Macro variation</h2>
+
+<p>One low-frequency world-space noise, sampled once for the whole material and used by every layer. It is the only variation source that changes <i>across</i> a single mesh, which is what a long wall, a building facade or a whole hillside needs.</p>
+
+<div class="tw"><table>
+<tr><td><code>MacroNoiseTexture</code></td><td>a large, soft greyscale noise tiled very low. The plugin ships a flat 4x4 placeholder, so this is the most common "the feature does nothing" cause. <code>/Engine/EngineMaterials/T_Default_MacroVariation</code> works to start</td></tr>
+<tr><td><code>Variation_NoiseScale</code></td><td><b>0.002</b> - roughly a 5 m feature. Halve it for a landscape read, double it for props</td></tr>
+<tr><td><code>MacroTintA</code> / <code>MacroTintB</code></td><td>the two colours the noise crossfades between. This is where a palette gets applied at world scale</td></tr>
+<tr><td><code>Variation_MacroTintAmount</code></td><td><b>0.5</b>. Hue movement</td></tr>
+<tr><td><code>Variation_MacroValueAmount</code></td><td><b>0.25</b>. Value movement. Keep this below the tint amount unless you want the world to look cloudy</td></tr>
+</table></div>
+
+<div data-shot="techniques.macro"></div>
+
+<h2>Height blending</h2>
+
+<p>The blend between two layers is resolved against their height rather than lerped, so gravel comes up through grass along its own stones and mortar fills before brick. Cavity is the height source, so no fourth texture is needed.</p>
+
+<div class="tw"><table>
+<tr><td><code>BlendHeightAmount</code></td><td>0 is a plain cross-fade, 1 is a pure interlock. <b>0.45</b> realistic, <b>0.85</b> stylized</td></tr>
+<tr><td><code>BlendContrast</code></td><td>how wide a band the interlock happens over. Low is a hard crunchy edge. Raising contrast is how you soften an edge - lowering the amount just returns you to a cross-fade</td></tr>
+<tr><td><code>LayerN_HeightBias</code></td><td>pushes one layer up or down the blend, so it wins in more or fewer places without repainting</td></tr>
+</table></div>
+
+<div class="tip">
+This is the single highest-value thing on the page, and it is free - the height is already sampled. A scene where every transition interlocks reads as built rather than painted.
+</div>
+
+<div data-shot="techniques.blend"></div>
+
+<h2>Detail normals</h2>
+
+<p>A second, finer normal laid over the blended result and faded out on the same curve the distance clamp uses, because it is exactly the high-frequency detail that crawls at range.</p>
+
+<div class="tw"><table class="free">
+<thead><tr><th>Use it</th><th>Do not</th></tr></thead>
+<tbody>
+<tr><td>Anything the player gets within a couple of metres of</td><td>Terrain seen only from a distance</td></tr>
+<tr><td>Large surfaces at low texel density, to buy back the close-up read</td><td>Surfaces already at 1024 px/m, where it only adds noise</td></tr>
+</tbody>
+</table></div>
+
+<div class="tw"><table>
+<tr><td><code>DetailNormal</code></td><td>a fine, high-frequency tiling normal. Defaults to a flat placeholder</td></tr>
+<tr><td><code>DetailScale</code></td><td><b>8</b> tiles per base tile. Raise until the detail stops being individually readable</td></tr>
+<tr><td><code>DetailStrength</code></td><td><b>0.5</b> realistic, <b>0.25</b> stylized</td></tr>
+</table></div>
+
+<p>One extra sample for the whole material, not per layer.</p>
+
+<div data-shot="techniques.detail"></div>
+
+<h2>Parallax</h2>
+
+<p>Shifts the UV along the view direction so a flat surface reads as having depth. Neither mode changes the silhouette - at a grazing angle the edge is still flat, which is the honest limit of the trick.</p>
+
+<div class="tw"><table class="free">
+<thead><tr><th>Mode</th><th>Cost</th><th>Use it</th></tr></thead>
+<tbody>
+<tr><td><b>Offset</b> (<code>LayerN_Parallax</code>)</td><td>a multiply and an add</td><td>freely. It sells brick, cobbles, plank floors and anything with shallow, regular depth</td></tr>
+<tr><td><b>Occlusion</b> (<code>LayerN_ParallaxOcclusion</code>)</td><td><b>a sampler slot</b></td><td>one hero surface in the level, if that. A raymarch cannot be expressed as graph taps, so its Custom node brings its own sampler - the only feature in either master that does</td></tr>
+</tbody>
+</table></div>
+
+<div class="tw"><table>
+<tr><td><code>ParallaxAmount</code></td><td><b>0.04</b>. Past about 0.1 the swimming at grazing angles costs more than the depth buys</td></tr>
+<tr><td><code>ParallaxSteps</code></td><td><b>16</b>, occlusion only. Fewer steps stair-step on steep height changes</td></tr>
+</table></div>
+
+<p>Leave <b>Parallax</b> off on the recipe if nothing needs it and it is not in the master at all.</p>
+
+<h2>Per-instance variation</h2>
+
+<p>Three tools, and picking the wrong one is how projects end up with forty material instances that differ by a tint.</p>
+
+<div class="tw"><table class="free">
+<thead><tr><th></th><th>Varies</th><th>Use it when</th></tr></thead>
+<tbody>
+<tr><td><code>bColorVariation</code></td><td>per object, hashed from world position</td><td>you want every copy to differ and do not care how. Crates, barrels, roof tiles. No per-actor setup at all</td></tr>
+<tr><td><code>bMacroVariation</code></td><td>across the world, including across one mesh</td><td>a single large object or a whole area needs to stop being one tone</td></tr>
+<tr><td><code>bPrimitiveData</code></td><td>per actor, set by you</td><td>a <i>specific</i> object needs a <i>specific</i> tint, roughness or wetness, from Blueprint or the details panel</td></tr>
+</tbody>
+</table></div>
+
+<p>The hash gives every copy <i>a</i> different tint. Primitive data gives a copy <i>the</i> tint somebody chose. Neither adds a shader permutation, which is the point: a new material instance does.</p>
+
+<div class="note">
+Custom primitive data indices are a fixed contract, asserted by <b>Verify Contract</b>: tint <b>0-3</b>, roughness <b>4</b>, wetness <b>5</b>. Set <b>Num Custom Data Floats</b> to 6 on the component.
+</div>
+
+<h2>RVT blending</h2>
+
+<p>The landscape writes its finished blend into a runtime virtual texture. Two things fall out of that, and they are worth separating.</p>
+
+<div class="tw"><table class="free">
+<tr><td><b>The terrain samples its own cache</b></td><td>per-pixel cost stops scaling with layer count, so twelve layers cost what one does. This is what makes a large layer set affordable</td></tr>
+<tr><td><b>Meshes sample it too</b></td><td>a rock reads the ground it is standing in and fades into it, so it meets the terrain instead of cutting a silhouette. Repaint the ground and everything standing in it follows</td></tr>
+</table></div>
+
+<p>Turn on <b>Build Project Outputs</b>, run <b>Mat &rarr; Wire Landscape Runtime Virtual Textures</b>, then add <code>MF_&lt;AssetName&gt;RVTBlend</code> to the mesh's own material.</p>
+
+<div class="warn">
+<code>bUseRVT</code> on with nothing writing the texture samples zero: base colour 0 and roughness 0, so the terrain is black and mirror-smooth whatever the layers say. If virtual texturing is off in the project, turn <code>bUseRVT</code> off too.
+</div>
+
+<div data-shot="techniques.rvt"></div>
+
+<h2>The distance clamp</h2>
+
+<p>Not optional and not a style choice. With FXAA and no temporal filter, sub-pixel normal and specular detail crawls in motion, and the material is the only place it can be removed. Always on, no switch.</p>
+
+<div class="tw"><table>
+<tr><td><code>FadeStart</code> / <code>FadeLength</code></td><td><b>2000</b> / <b>6000</b> cm on the surface master</td></tr>
+<tr><td><code>DistanceNormalFlatten</code></td><td><b>0.55</b> realistic, <b>0.75</b> stylized. How flat the normal goes at range</td></tr>
+<tr><td><code>DistanceRoughnessFloor</code></td><td><b>0.35</b> realistic, <b>0.5</b> stylized. The lowest roughness allowed at range, which is what kills the sparkle</td></tr>
+</table></div>
+
+<p>On TAA instead of FXAA, turn both down - the temporal filter is doing this job and the clamp is only costing you detail.</p>
+
+<div class="tip">
+Judge this in motion, at ES3.1, with FXAA on. A screenshot cannot show you the problem it solves.
+</div>
+
+<h2>Texture arrays</h2>
+
+<p>Past about four landscape layers, every layer becomes one slice of three arrays instead of three textures of its own: eight layers is three texture objects rather than twenty-four.</p>
+
+<ol>
+<li>Tick <b>Texture Array Layers</b> on the recipe and set <b>Layer Texture Root</b>.</li>
+<li><b>Mat &rarr; Pack Layers for &lt;Recipe&gt;</b>.</li>
+<li>Generate.</li>
+</ol>
+
+<p>Every layer's textures then have to be the same resolution and format, which is the real constraint. Detail on <a href="landscape.html#texture-arrays">Landscape</a>.</p>
+
+<h2>What to turn on first</h2>
+
+<p>If you do exactly four things to a scene that already has art in it, do these.</p>
+
+<ol>
+<li><code>BlendHeightAmount</code> above 0 on every blend.</li>
+<li>Dual scale on the terrain, tiling break on the meshes.</li>
+<li>A real noise in <code>MacroNoiseTexture</code>.</li>
+<li>RVT blend on anything sitting in the ground.</li>
+</ol>
+
+<p><a class="cta" href="stylized.html">Then pick a style &rarr;</a></p>
+
+</main>
+</body>
+</html>

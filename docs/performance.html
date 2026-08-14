@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cost &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Cost</h1>
+<p class="lede">What each decision actually costs, measured from the generated HLSL rather than estimated.</p>
+
+<h2>Built for the mobile forward path</h2>
+
+<ul>
+<li><b>4 samplers however many layers are on.</b> Every layer sample is Shared:Wrap, so the 16-sampler limit never binds. Only trample and parallax occlusion ever spend a fifth.</li>
+<li><b>Sub-pixel detail is removed with distance</b>, because specular that fine crawls without a temporal filter and FXAA cannot save it.</li>
+<li><b>Cavity, never ambient occlusion.</b> Micro shadowing multiplies base colour and specular; the AO pin stays free so it cannot double with the renderer's own occlusion.</li>
+<li><b>A disabled feature is not compiled.</b> Its texture samples and its maths leave the shader entirely, rather than being multiplied by zero.</li>
+</ul>
+
+<h2>Measured</h2>
+
+<p>Surface master, from the generated HLSL.</p>
+
+<div class="tw"><table>
+<thead><tr><th></th><th>Texture taps</th><th>Samplers</th><th>PS instructions</th></tr></thead>
+<tbody>
+<tr><td>Everything off</td><td>3</td><td>4</td><td>999</td></tr>
+<tr><td>One extra layer</td><td>6</td><td>4</td><td>1082</td></tr>
+<tr><td>One triplanar layer</td><td>9</td><td>4</td><td>1051</td></tr>
+<tr><td>Three layers, all triplanar</td><td>27</td><td>4</td><td>1289</td></tr>
+<tr><td>Accumulation on</td><td>3</td><td>4</td><td>1025</td></tr>
+<tr><td>Trample on</td><td>6</td><td>5</td><td>1050</td></tr>
+</tbody>
+</table></div>
+
+<p>Samplers stay at <b>4 in every permutation</b>. The one exception is trample, whose extra tap is in the clamp group that everything clamped already shares - the wrap group the layers use is untouched.</p>
+
+<div class="warn">
+The Material Editor's sampler stat over-reports. It counts the three <code>Texture2DSample</code> overload declarations and the engine's own BRDF lookup alongside the material's actual taps - 12 where the shader really contains 9. Dump the shader with <code>r.DumpShaderDebugInfo 1</code> and count <code>Texture2DSample(Material_</code> when the number matters.
+</div>
+
+<div data-shot="performance.stats"></div>
+
+<h2>Permutations are the real cost</h2>
+
+<p>Every distinct set of static switches is a distinct shader map, and PSOs are per vertex factory times material. Instruction count is a number you can live with; permutation count is the one that grows without anyone noticing.</p>
+
+<ul>
+<li>Parent to one of the four presets rather than turning switches on from the base master.</li>
+<li>Reuse the same preset across assets that do not genuinely differ.</li>
+<li>Turn recipe options on freely - they are free until an instance says yes - but keep the set of <i>instance</i> switch combinations small.</li>
+</ul>
+
+<h2>Checking it</h2>
+
+<div class="tw"><table class="free">
+<tr><td><b>Mat &rarr; Verify Contract</b></td><td>asserts what each master claims to cost: taps and samplers per feature, the ambient occlusion pin left free, primitive data indices unmoved. Results in the Output Log</td></tr>
+<tr><td><b>Mat &rarr; Report Cost</b></td><td>how many distinct shader maps the instances add up to, and how much texture each master keeps resident</td></tr>
+</table></div>
+
+<div data-shots="performance.verify, performance.report"></div>
+
+<div class="important">
+Set the preview platform to <b>Android ES3.1</b> or <b>PC D3D Mobile</b> before reading any of these numbers. SM6 will happily compile things that silently vanish at ES3.1.
+</div>
+
+<h2>Where the cost is not</h2>
+
+<p>Two costs dominate a real scene and neither is in this material:</p>
+
+<div class="tw"><table>
+<tr><td>Overdraw</td><td><code>r.EarlyZPass=0</code> means no depth prepass, so masked geometry pays for every layer it draws through. This is the foliage bill</td></tr>
+<tr><td>Texture memory</td><td><code>r.TextureStreaming=False</code> means every texture is resident at mip 0. This is why every parameter defaults to a 4x4 neutral, and why an unused slot costs nothing</td></tr>
+</table></div>
+
+</main>
+</body>
+</html>

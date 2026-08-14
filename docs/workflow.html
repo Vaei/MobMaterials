@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Building a world &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Building a world</h1>
+<p class="lede">The order that avoids backtracking, and the ten decisions that separate a scene that works from a scene that ships. Both art styles do all of this. What changes between them is two pages: <a href="stylized.html">stylized</a> and <a href="realistic.html">realistic</a>.</p>
+
+<div data-shot="workflow.scene"></div>
+
+<h2>The order</h2>
+
+<div class="tw"><table class="free">
+<thead><tr><th>#</th><th>Do</th><th>Because</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Pick one texel density for the project</td><td>every <code>UVScale</code> in the game derives from it</td></tr>
+<tr><td>2</td><td>Name the layers on the recipe</td><td>layer count is baked into the graph and cannot change on an instance</td></tr>
+<tr><td>3</td><td>Author albedo flat, cavity dark</td><td>there is no baked lighting and no AO pin</td></tr>
+<tr><td>4</td><td>Blend by height, never cross-fade</td><td>a transition should read as material, not as opacity</td></tr>
+<tr><td>5</td><td>Break repetition at three distances</td><td>a different thing gives it away at 2 m, 20 m and 200 m</td></tr>
+<tr><td>6</td><td>Ground every mesh into the terrain</td><td>a hard silhouette at the base is the tell of a game scene</td></tr>
+<tr><td>7</td><td>Vary per instance, not per instance asset</td><td>a new material instance is a new shader map</td></tr>
+<tr><td>8</td><td>Make weather a world value</td><td>wet is a state the world is in, not a look on a material</td></tr>
+<tr><td>9</td><td>Judge in the debug views</td><td>a blend you cannot see is a blend you cannot fix</td></tr>
+<tr><td>10</td><td>Run Verify and Report before shipping</td><td>the cost claims are asserted, not assumed</td></tr>
+</tbody>
+</table></div>
+
+<h2>1. Texel density</h2>
+
+<p>Decide it once, write it down, and never argue about a <code>UVScale</code> again. Density is texture resolution divided by tile size in metres.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Seen from</th><th>Density</th><th>2K map tiles every</th></tr></thead>
+<tbody>
+<tr><td>hands on it - hero props, doors, weapons</td><td>1024 px/m</td><td>2 m</td></tr>
+<tr><td>walking past - walls, floors, rocks</td><td>512 px/m</td><td>4 m</td></tr>
+<tr><td>terrain and anything above head height</td><td>256 px/m</td><td>8 m</td></tr>
+<tr><td>distant cliffs, backdrop geometry</td><td>128 px/m</td><td>16 m</td></tr>
+</tbody>
+</table></div>
+
+<p>Then the two knobs that set it:</p>
+
+<div class="tw"><table>
+<tr><td><code>TriplanarScale</code></td><td>world units per UV. <b>1 &divide; tile size in cm.</b> A 2 m tile is <code>0.005</code>; a 4 m tile is <code>0.0025</code></td></tr>
+<tr><td><code>&lt;Layer&gt;_UVScale</code> (landscape)</td><td>tiles per landscape <i>quad</i>, not per metre. Never set it by hand - <b>Mat &rarr; Fit UV Scale To Landscape&hellip;</b> reads the landscape's own quad size and writes every layer at once</td></tr>
+</table></div>
+
+<div class="warn">
+A resized landscape does not have the quads the defaults assume. Skip the fit step and every layer tiles wrongly at the same time, which reads as blur or moire rather than as a wrong number.
+</div>
+
+<div data-shot="workflow.texel"></div>
+
+<h2>2. The layer plan</h2>
+
+<p>Write the layer list before generating anything. A base plus three to five painted layers covers most biomes; past four, turn on <b>Texture Array Layers</b> so eight layers is three texture objects instead of twenty-four.</p>
+
+<ul>
+<li><b>Layer 0 is the base</b> and holds whatever weight the painted layers leave behind. Make it the material the ground mostly is.</li>
+<li><b>Name a layer <code>Rock</code></b> if you want slope rock - it overlays that layer where the ground gets steep, with nothing painted.</li>
+<li><b>Name a layer <code>Moss</code></b> to paint moss on top of the four signals that place it automatically.</li>
+<li><b>Name a layer <code>Wetness</code></b> to paint permanently damp ground.</li>
+<li>Each layer also carries its <b>physical surface</b> and <b>grass type</b>, so paint decides what a footstep sounds like and what grows there.</li>
+</ul>
+
+<div data-shot="workflow.layer-plan"></div>
+
+<h2>3. Albedo and value</h2>
+
+<p>Nothing is baked in. No lighting, no ambient occlusion, no contact shadow. Every dark pixel you author is a dark pixel at noon.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Channel</th><th>Keep it</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>base colour</td><td>sRGB 30-240</td><td>below 30 nothing bounces, above 240 nothing shades. Charcoal is 50, fresh snow is 235</td></tr>
+<tr><td>cavity (CRM red)</td><td>baked, like AO</td><td>same bake, different purpose: tight creases and edge curvature, not broad occlusion. It multiplies base colour and specular, and it is the only micro shadowing there is</td></tr>
+<tr><td>roughness (CRM green)</td><td>never 0, never 1</td><td>0 mirrors the sky, 1 kills the light. Author the variation, not the extremes</td></tr>
+<tr><td>metallic (CRM blue)</td><td>0 or 1</td><td>nothing in the world is 40% metal. If your pack has occlusion in blue, set <code>MetallicScale</code> to 0</td></tr>
+<tr><td>AO</td><td>do not author it</td><td>the renderer supplies its own. A baked AO map on top darkens twice</td></tr>
+</tbody>
+</table></div>
+
+<h2>4. Blend by height</h2>
+
+<p><code>BlendHeightAmount</code> at 0 is a plain cross-fade, at 1 is a pure interlock where the layers meet along their own detail: mortar filling before brick, gravel settling between cobbles. <code>BlendContrast</code> is how wide a band that happens over.</p>
+
+<div class="tw"><table>
+<thead><tr><th></th><th><code>BlendHeightAmount</code></th><th><code>BlendContrast</code></th></tr></thead>
+<tbody>
+<tr><td>Surface, subtle</td><td>0.45</td><td>0.5</td></tr>
+<tr><td>Surface, deliberate</td><td>0.8</td><td>0.7</td></tr>
+<tr><td>Landscape default</td><td>0.35</td><td>0.5</td></tr>
+</tbody>
+</table></div>
+
+<p>Contrast only widens the interlock band. It never softens the interlock itself, so a crunchy edge is fixed by raising contrast, not by lowering the amount.</p>
+
+<div data-shot="workflow.interlock"></div>
+
+<h2>5. Repetition, at three distances</h2>
+
+<p>Three different things give a tiled surface away, and each needs its own fix. Turn all three on.</p>
+
+<div class="tw"><table class="free">
+<thead><tr><th>Distance</th><th>What gives it away</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>0-5 m</td><td>the texture runs out of detail</td><td><code>bDetail</code>, a fine normal, <code>DetailScale</code> 8, <code>DetailStrength</code> 0.5</td></tr>
+<tr><td>5-40 m</td><td>the tile grid appears</td><td>meshes: <code>Layer0_TileBreak</code>. Terrain: <code>&lt;Layer&gt;_DualScale</code> (on by default) or <code>&lt;Layer&gt;_HexTiling</code> for the layer that repeats worst</td></tr>
+<tr><td>40 m +</td><td>a large area reads as one flat tone</td><td><code>bMacroVariation</code> with a real low-frequency noise, <code>Variation_NoiseScale</code> 0.002</td></tr>
+</tbody>
+</table></div>
+
+<p>Which tier, and how to tune each one, is on <a href="techniques.html#killing-repetition">Techniques</a>.</p>
+
+<div class="tip">
+Hex tiling is three rotated taps and costs three times the samples. Put it on the one or two layers that cover the most screen - grass, dirt - and leave the rest on dual scale, which is a second tiling overlaid for one extra tap.
+</div>
+
+<div class="important">
+Hex tiling averages three taps, which averages the variance away and washes the layer out. Raise <code>VarianceRestore</code> and set <code>MeanColor</code> to the texture's actual average, or it will look faded next to everything else.
+</div>
+
+<div data-shot="workflow.repetition"></div>
+
+<h2>6. Ground everything</h2>
+
+<p>A rock sitting on terrain cuts a hard silhouette into it. The fix is that the rock reads the terrain's own runtime virtual texture and fades into it, so repainting the ground moves everything standing in it.</p>
+
+<ol>
+<li>Tick <b>Build Project Outputs</b> on the landscape recipe and set the four paths beneath it. Generate.</li>
+<li><b>Mat &rarr; Wire Landscape Runtime Virtual Textures</b>.</li>
+<li>Add the generated <code>MF_&lt;AssetName&gt;RVTBlend</code> to the mesh's own material.</li>
+</ol>
+
+<div class="warn">
+<code>bUseRVT</code> on with nothing writing the texture reads zero: base colour 0 and roughness 0, so the terrain is black and mirror-smooth whatever the layers say. If you are not using virtual textures, turn <code>bUseRVT</code> off.
+</div>
+
+<div data-shot="workflow.rvt-blend"></div>
+
+<h2>7. Vary per instance</h2>
+
+<p>Two props with the same material should not be the same colour. Neither should need a second material instance - every one of those is another shader map, multiplied by every vertex factory that wears it.</p>
+
+<div class="tw"><table class="free">
+<tr><td><code>bColorVariation</code></td><td>a hash of where the object stands. Free, automatic, no per-actor setup. <code>Variation_HueRange</code> 8&deg;, <code>Variation_SaturationRange</code> 0.1, <code>Variation_ValueRange</code> 0.1</td></tr>
+<tr><td><code>bMacroVariation</code></td><td>world-space noise, so it varies <i>across</i> one mesh as well as between them. The only source that breaks up a single long wall</td></tr>
+<tr><td><code>bPrimitiveData</code></td><td>tint, roughness and wetness per actor from custom primitive data, when a specific object needs a specific value. Set <b>Num Custom Data Floats</b> on the component</td></tr>
+</table></div>
+
+<div data-shot="workflow.variation"></div>
+
+<h2>8. Weather is a world value</h2>
+
+<p>Turn on <code>bWetness</code> on whatever should respond, then drive one number on the weather collection. <b>Mat &rarr; Open MPC_MobWeather</b> and drag <code>Wetness</code> 0 to 1, live in the viewport.</p>
+
+<p>Same for <code>Snow</code>: it settles across the world by which way each surface faces, crevices first and flats last, on terrain, props and roofs together, and it costs no texture sample. Point several recipes at one collection and a whole project follows it.</p>
+
+<p>Full walkthrough: <a href="weather.html">Weather</a>.</p>
+
+<h2>9. Judge in the debug views</h2>
+
+<p>Turn on <code>bDebug</code> and set <code>DebugMode</code>. Output goes to emissive with base colour blacked out, so what you see is only the thing you asked about. This is the part that saves the most time.</p>
+
+<div class="tw"><table>
+<tr><td>Layer Weights</td><td>which layer is actually winning where. Check this before touching a blend number</td></tr>
+<tr><td>Height</td><td>what the interlock is resolving against</td></tr>
+<tr><td>Cavity</td><td>whether the micro shadowing is doing anything</td></tr>
+<tr><td>Vertex Colour</td><td>what you actually painted, remembering black adds</td></tr>
+<tr><td>Wetness, Accumulation, Trample</td><td>the weather masks on their own</td></tr>
+<tr><td>Normal, Transmission</td><td>surface direction, and light through a leaf</td></tr>
+</table></div>
+
+<div data-shot="workflow.debug-weights"></div>
+
+<h2>10. What it costs</h2>
+
+<p>Measured from the generated HLSL for the surface master. <b>Samplers stay at 4 in every permutation.</b></p>
+
+<div class="tw"><table>
+<thead><tr><th></th><th>Texture taps</th><th>PS instructions</th></tr></thead>
+<tbody>
+<tr><td>Everything off</td><td>3</td><td>999</td></tr>
+<tr><td>One extra layer</td><td>6</td><td>1082</td></tr>
+<tr><td>One triplanar layer</td><td>9</td><td>1051</td></tr>
+<tr><td>Three layers, all triplanar</td><td>27</td><td>1289</td></tr>
+</tbody>
+</table></div>
+
+<p>The number to watch is not instructions, it is <b>permutations</b>. Every distinct set of static switches is a shader map, and PSOs are per vertex factory times material. Parent to a preset, reuse presets across assets, and run <b>Mat &rarr; Report Cost</b> before shipping. Detail on <a href="performance.html">Cost</a>.</p>
+
+<h2>Checklist</h2>
+
+<ul>
+<li>One texel density, written down, and <b>Fit UV Scale</b> run on every landscape.</li>
+<li>No AO anywhere. Cavity is doing that job.</li>
+<li>Every blend has <code>BlendHeightAmount</code> above 0.</li>
+<li>Detail, tiling break and macro variation all on, with real art in <code>DetailNormal</code> and <code>MacroNoiseTexture</code>.</li>
+<li>Nothing meets the ground with a hard silhouette.</li>
+<li>No two adjacent copies of a prop are the same colour.</li>
+<li><code>Wetness</code> and <code>Snow</code> both move the whole scene from one collection.</li>
+<li>Preview platform is ES3.1, and the scene was judged there.</li>
+<li><b>Verify Contract</b> passes and <b>Report Cost</b> is a number you are happy with.</li>
+</ul>
+
+<h2>Further reading</h2>
+
+<div class="tw"><table class="free">
+<tr><td><a href="https://blog.daftsoftware.com/unreal-perf-maxing/">Unreal Perf Maxing</a></td><td>the mobile forward path end to end, with a starter project</td></tr>
+<tr><td><a href="https://technology.riotgames.com/news/valorant-shaders-and-gameplay-clarity">Valorant: shaders and gameplay clarity</a></td><td>what shipping on this path looks like, and why readability drives the art</td></tr>
+<tr><td><a href="https://www.youtube.com/@BenCloward">Ben Cloward</a></td><td>shader-by-shader breakdowns of nearly every technique on this page</td></tr>
+<tr><td><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/runtime-virtual-texturing-in-unreal-engine">Runtime virtual texturing</a></td><td>Epic's reference for the system step 6 relies on</td></tr>
+</table></div>
+
+<p><a class="cta" href="techniques.html">Now the techniques &rarr;</a></p>
+
+</main>
+</body>
+</html>

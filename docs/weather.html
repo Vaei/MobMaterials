@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weather &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Weather</h1>
+
+<p class="lede">Making a world get wet, then snowed on, then dusty, and having it look like weather rather than like someone swapped a texture.</p>
+
+<p>Everything here is already in the surface and landscape masters. None of it needs new art, and all of it is off until asked for.</p>
+
+<h2>Rain</h2>
+
+<p>Turn on <code>bWetness</code> on any instance that should respond, then drive one value.</p>
+
+<p><b>Mob → Open MPC_MobWeather</b>, and drag <code>Wetness</code> from 0 to 1. Everything with wetness on darkens and tightens together.</p>
+
+<p>That single value is the whole point. Wetness is not a per-material look, it is a state the world is in, so it lives in a parameter collection rather than on each instance. Point several recipes at one collection and a whole project follows it.</p>
+
+<p>Per instance, on top of the global value:</p>
+
+<div class="tw"><table>
+<tr><td><code>Wetness_LocalAmount</code></td><td>scales the global. <b>0 opts out entirely</b> - use it for interiors, undersides, anything sheltered</td></tr>
+<tr><td><code>Darkening</code></td><td>how much the albedo drops. Wet things are darker because the water is doing the reflecting instead of the surface</td></tr>
+<tr><td><code>RoughnessTarget</code></td><td>what roughness wet reaches. Low. This is most of the effect</td></tr>
+<tr><td><code>NormalFlatten</code></td><td>water filling in the fine detail</td></tr>
+<tr><td><code>PorosityAmount</code></td><td>how much cavity decides where it wets first</td></tr>
+</table></div>
+
+<p>Vertex colour <b>blue</b> adds on top, painted per mesh, for a surface that holds water in one particular place.</p>
+
+<div class="tip">
+Start with only <code>RoughnessTarget</code> and <code>Darkening</code>. Wet is mostly a roughness change - if it does not read at <code>Wetness</code> 1 with those two alone, the problem is the lighting, not the material.
+</div>
+
+<div data-shot="weather.wetness"></div>
+
+<h2>Puddles</h2>
+
+<p>Standing water is a harder threshold than the damp darkening around it, and it needs somewhere to stand.</p>
+
+<div class="tw"><table>
+<tr><td><code>PuddleDepth</code></td><td>how deep into the cavity water has to pool before it counts as standing</td></tr>
+<tr><td><code>PuddleRoughness</code></td><td>near 0. A puddle is a mirror</td></tr>
+<tr><td><code>PuddleFacing</code></td><td>how up-facing a surface must be. This is what stops water clinging to walls</td></tr>
+</table></div>
+
+<p>Porosity comes from cavity, so water reaches the crevices before the high points, and puddles form in the low ones. That is why a surface with a flat cavity channel gets uniform wetness and no puddles - the material has nothing to tell it where low is.</p>
+
+<div data-shot="weather.puddles"></div>
+
+<h2>Ripples</h2>
+
+<p><code>bRipples</code>. Two scrolling normals, gated by the puddle mask.</p>
+
+<p>This is the difference between wetness that reads as weather and wetness that reads as a darker texture. A still puddle is a wet-looking surface; a moving one is rain.</p>
+
+<div class="tw"><table>
+<tr><td><code>RippleNormal</code></td><td>any tiling normal. A generic noise normal works; a real ripple texture works better</td></tr>
+<tr><td><code>RippleScale</code></td><td>tiling. Higher than you expect - ripples are small</td></tr>
+<tr><td><code>RippleSpeed</code></td><td>how fast the two layers drift</td></tr>
+<tr><td><code>RippleStrength</code></td><td>how much they disturb the surface</td></tr>
+</table></div>
+
+<p>The two sets scroll at different rates and directions, so their interference never repeats on a period anyone can see. They only appear where <code>Puddle</code> is non-zero, so dry ground stays still and you can leave this on.</p>
+
+<div class="important">
+Ripples do nothing without puddles. If <code>PuddleDepth</code> is low or the surface is not facing up, there is no puddle mask to gate them and nothing will move. Check the puddle mask first - the <b>Wetness</b> debug view shows it.
+</div>
+
+<div data-shot="weather.ripples"></div>
+
+<h2>Snow</h2>
+
+<p>Snow is one number for the whole world, and everything else follows it: the terrain, the props standing on it, the footprints through it, and what a step sounds like.</p>
+
+<p><b>Mob → Open MPC_MobWeather</b>, and drag <code>Snow</code> 0 to 1.</p>
+
+<p>That single value is the point. How much has fallen is a state the world is in, not a per-material look, so it lives in the collection beside <code>Wetness</code> and every master reads it. <code>bAccumulation</code> on a surface instance, or the recipe's <b>Landscape Accumulation</b> on the terrain, decides who listens.</p>
+
+<div class="tw"><table>
+<tr><td><code>Snow</code> (collection)</td><td>how much has fallen. <b>This is the one to drive</b></td></tr>
+<tr><td><code>Accumulation_LocalAmount</code></td><td>scales the global per instance. <b>0 opts out entirely</b> - use it for anything sheltered</td></tr>
+<tr><td><code>Accumulation_Colour</code></td><td>white, slightly blue. The default is snow</td></tr>
+<tr><td><code>Accumulation_Facing</code></td><td>how up-facing a surface must be to hold it. Raise it and only flat tops catch</td></tr>
+<tr><td><code>Accumulation_CavityBias</code></td><td>how much it favours crevices. A thin covering starts in the cracks and the last of it survives there</td></tr>
+<tr><td><code>Accumulation_NoiseAmount</code></td><td>breaks the line between covered and bare, so it does not read as a threshold</td></tr>
+<tr><td><code>Accumulation_CoverRoughness</code></td><td>snow is rough. High</td></tr>
+</table></div>
+
+<p>It costs no extra samples: it reuses the cavity the layers already blended and the surface normal the material already has.</p>
+
+<p><b>A worked snowfall:</b></p>
+
+<ol>
+
+<li><code>Accumulation_Colour</code> to near-white, <code>Accumulation_CoverRoughness</code> to 0.85.</li>
+
+<li><code>Accumulation_Facing</code> to 0.6 - only surfaces facing meaningfully upward.</li>
+
+<li><code>Accumulation_CavityBias</code> to 0.5, so it starts in the crevices.</li>
+
+<li>Drive the collection's <code>Snow</code> 0 to 1 and watch it fill from the cracks outward, then cover the flats.</li>
+
+</ol>
+
+<div data-shot="weather.snow"></div>
+
+<h3>Walking through it</h3>
+
+<p>Snow is the case trample was built for. A print clears the covering back to the ground underneath rather than denting it - <code>Accumulation_TrampleErase</code> at 1 - so a trail through fresh snow reads as bare earth showing, which is what it is.</p>
+
+<p>Three things want setting for snow rather than mud:</p>
+
+<div class="tw"><table>
+<tr><td><code>Trample_RoughnessTarget</code></td><td><b>0.9</b>. The default 0.35 is the mud case: wet, and smoother than its surroundings. Broken snow is rougher</td></tr>
+<tr><td>volume <code>HoldSeconds</code></td><td><b>0</b>. Snow keeps prints until something covers them again</td></tr>
+<tr><td><code>bTrampleWPO</code></td><td>optional. The ground sinks into the print for real rather than only shading like it</td></tr>
+</table></div>
+
+<p><b>And it sounds like snow.</b> <code>UNQFootstepComponent</code> reads the same <code>Snow</code> value the material does and, where the surface faces up enough to hold a covering and nothing has walked it off yet, plays the snow footstep instead of the ground's own. Walk your own trail back and you hear the earth again. Nothing about that is authored twice: the audio reaches the same conclusion from the same three numbers the shader uses.</p>
+
+<p>For snow <b>and</b> wet ground together, turn both on. Accumulation runs after wetness, so snow sits on top of a wet surface rather than being darkened by it - which is the right order: snow that has just landed is not wet yet.</p>
+
+<h2>Dust and ash</h2>
+
+<p>The same system, different numbers. Nothing about it is snow-specific except the defaults.</p>
+
+<div class="tw"><table>
+<thead><tr><th></th><th>Colour</th><th>Facing</th><th>Cavity bias</th><th>Cover roughness</th></tr></thead>
+<tbody>
+<tr><td><b>Snow</b></td><td>near white, cool</td><td>0.6</td><td>0.4</td><td>0.85</td></tr>
+<tr><td><b>Dust</b></td><td>pale warm grey</td><td>0.3</td><td>0.7</td><td>0.95</td></tr>
+<tr><td><b>Ash</b></td><td>mid grey, desaturated</td><td>0.4</td><td>0.6</td><td>0.9</td></tr>
+<tr><td><b>Sand drift</b></td><td>warm ochre</td><td>0.5</td><td>0.8</td><td>0.8</td></tr>
+</tbody>
+</table></div>
+
+<p>Dust wants a <b>low facing</b> and a <b>high cavity bias</b>: it settles on anything roughly horizontal and hides in every crack, where snow wants surfaces genuinely facing the sky. That one difference is most of what separates them.</p>
+
+<div data-shot="weather.dust"></div>
+
+<h2>Trample</h2>
+
+<p><code>bTrample</code>. Where the ground has been walked through: darker, rougher or smoother, dented, and with the snow taken back off it.</p>
+
+<p>Everything above is a function of the surface itself, so it can be worked out per pixel from what the material already has. Trample cannot: it is a record of what happened, so something has to keep that record. <code>AMobTrampleVolume</code> is a box with a render target behind it, projected straight down, and the material reads it back.</p>
+
+<div data-shot="weather.trample"></div>
+
+<h3>Setting one up</h3>
+
+<ol>
+
+<li>Place an <b>AMobTrampleVolume</b> over the ground that should take prints. <b>Mat → Fit Selected Box Volume To Landscape</b> sizes it to the terrain, or set the box by hand for a smaller area.</li>
+
+<li>Point its <b>Mask</b> at a render target. Generating authors <code>RT_&lt;Master&gt;Trample</code> beside the master at 2048 square; duplicate it per area if two volumes need different resolutions.</li>
+
+<li>Point its <b>Collection</b> and <b>Stamp Material</b> at <code>MPC_MobTrample</code> and <code>M_MobTrampleStamp</code>.</li>
+
+<li>On the material instance, set <b>Trample Mask</b> to the <i>same</i> render target, and turn <code>bTrample</code> on.</li>
+
+<li>Call <code>Add Trample</code> wherever a foot lands.</li>
+
+</ol>
+
+<pre><code>Add Trample (World Location, Radius 24, Strength 1.0, Rotation Degrees)</code></pre>
+
+<p>It knows nothing about who asked, so a bot leaves the prints a player does, and a cart could leave a rut without any of this changing. A position no volume covers does nothing, which is the common case and not an error.</p>
+
+<p>For anything that scrapes rather than steps, <code>Add Trample Trail</code> marks a line between two points at a spacing. A frame at a run is metres of ground, so stamping only where something is now leaves a dotted line behind it. <b>UMobTrampleTrailComponent</b> wraps that for a dragged body: add it, <code>Set Trail Active</code> while the dragging lasts, and it traces down to the ground and marks its own path. Off, it does not tick.</p>
+
+<h3>What it does</h3>
+
+<div class="tw"><table>
+<tr><td><code>Trample_Depth</code></td><td>scales what the target holds into how far the surface tilts</td></tr>
+<tr><td><code>Trample_Darkening</code></td><td>base colour multiplier where the ground is fully broken</td></tr>
+<tr><td><code>Trample_RoughnessTarget</code></td><td>wet mud is smoother, broken snow is rougher. Both live here</td></tr>
+<tr><td><code>Trample_NormalStrength</code></td><td>how far the trench tilts the surface</td></tr>
+<tr><td><code>Accumulation_TrampleErase</code></td><td>how completely a print clears the covering</td></tr>
+</table></div>
+
+<p>On the volume, <code>HoldSeconds</code> is how long a print stays at full depth and <code>FadeSeconds</code> is how long it then takes to go. **<code>HoldSeconds</code> at zero never fades at all**, which is what snow that settles once wants; a few seconds each is right for wet mud that runs back in. Every print runs its own clock, so one left now goes on its own schedule rather than at whatever rate the oldest one is on.</p>
+
+<p>Set <code>Fade</code> to <b>Through Half</b> for ground that keeps a mark rather than losing it: the print drops to <code>HalfFadeAmount</code> of its depth over <code>HalfFadeSeconds</code>, sits there for <code>HoldHalfFadeSeconds</code>, and only then fades out over <code>FadeSeconds</code>. Soft earth that takes a deep print underfoot and then holds a shallow one, or snow that slumps without filling in.</p>
+
+<h3>Geometry</h3>
+
+<p><code>bTrampleWPO</code>, on the landscape master, off by default. The ground actually sinks into a print rather than only shading like it.</p>
+
+<div class="tw"><table>
+<tr><td><code>Trample_WPODepth</code></td><td>how far a full strength print sinks, in world units. Defaults to 24, which is a boot in deep snow</td></tr>
+<tr><td><code>Trample_WPOFadeStart</code>, <code>Trample_WPOFadeLength</code></td><td>where the trench flattens out again with distance</td></tr>
+</table></div>
+
+<p>One vertex tap, and about 47 vertex instructions - but paid on every landscape vertex, in the base pass and in every shadow pass, which is why it is opt-in and why the distance fade is not optional. Nothing is added to the pixel shader.</p>
+
+<p>What it can resolve is the landscape's own vertex spacing. A quad is one unit of the landscape actor's scale, so a boot at 24 cm across a landscape scaled 15.87 spans about three vertices: enough for a soft dimple and a trail, not enough for a boot shape. The print's <i>shape</i> comes from the normal imprint either way, which is why this sits on top of trample rather than replacing it.</p>
+
+<p>Vertices sink and never lift, because collision does not move with them. At these depths a foot lands a few centimetres above the trench floor and nothing notices; at ten times the depth it would.</p>
+
+<h3>What it cannot do</h3>
+
+<p>Without <code>bTrampleWPO</code> the mask is a shading imprint, not geometry: the silhouette of the ground does not change, so at a grazing angle a print is flat - the same honest limit parallax has.</p>
+
+<p>Collision never follows, switch or no switch. The heightfield is untouched, so foot IK traces and footstep queries hit the undeformed ground.</p>
+
+<p>Resolution is the render target against the volume: 2048 across an 80 m box is 4 cm a texel, which is about as coarse as a boot survives. A larger volume at the same resolution reads as a trail rather than as prints.</p>
+
+<p>The target is RGBA8 and only red is ever read, which looks like three channels of waste. A single channel target is not the saving it appears to be: drawn through a canvas it comes back saturated, so the format that works is the one that carries channels nobody wants.</p>
+
+<p>One volume is read at a time. The bounds live in a parameter collection, which holds one set of values, so two overlapping volumes would each be describing the other's texture. Every master that should take prints from a volume has to name the <b>same</b> collection, or only one of them gets any.</p>
+
+<div class="important">
+The render target on the volume and the <code>TrampleMask</code> parameter on the instance have to be the same asset. Nothing checks it: a mismatch reads as trample simply never appearing, because the material is sampling a target nobody is drawing into.
+</div>
+
+<h2>Driving it</h2>
+
+<p>The collection is a normal <code>UMaterialParameterCollection</code>.</p>
+
+<pre><code>Set Scalar Parameter Value (Collection: MPC_MobWeather, Parameter: Wetness, Value: 0..1)</code></pre>
+
+<p>For a storm rolling in, interpolate it rather than setting it - wetness arriving instantly reads as a bug. A minute from 0 to 1 is not too slow.</p>
+
+<p>Accumulation is a <b>material instance</b> parameter rather than a collection one, because snow depth is usually per-surface: a roof and the ground under it fill at different rates. Drive it with a dynamic material instance, or promote it to your own collection parameter if you want one global snow level.</p>
+
+<div class="tip">
+Wetness and accumulation are the two ends of the same storm. Ramp wetness up as rain starts, hold it, then ramp accumulation as it turns to snow while wetness falls away. The order the material applies them - wetness, then ripples, then accumulation - is already the order weather happens in.
+</div>
+
+<div data-shot="weather.mpc"></div>
+
+<h2>Terrain</h2>
+
+<p>The landscape master has its own wetness, and it is not the same system.</p>
+
+<div class="tw"><table>
+<tr><td><code>Wetness_Amount</code></td><td>the global dial, plus a paintable <code>Wetness</code> layer for places that are always damp</td></tr>
+<tr><td><code>Darkening</code>, <code>RoughnessTarget</code>, <code>NormalFlatten</code></td><td>as above</td></tr>
+<tr><td><code>PuddleDepth</code>, <code>PuddleRoughness</code></td><td>standing water in the terrain's own cavity</td></tr>
+</table></div>
+
+<p>The wet mask also feeds the <b>physical material output</b>, so wet dirt reads as mud underfoot - the footstep sound follows the weather without anyone wiring it up.</p>
+
+<p>Accumulation and trample are on the landscape master too, and behave as they do above. Terrain accumulation is gated by its <code>Amount</code> rather than by a switch, since it costs no samples either way; a paint layer with a slope mask is still the better answer where snow has to drift in one particular place rather than fall on everything at once.</p>
+
+<h2>What it costs</h2>
+
+<div class="tw"><table>
+<tr><td>Wetness</td><td>no extra samples. Arithmetic on values the material already has</td></tr>
+<tr><td>Puddles</td><td>included in the above</td></tr>
+<tr><td>Ripples</td><td><b>two samples</b>, and only where an instance turns them on</td></tr>
+<tr><td>Accumulation</td><td>no extra samples</td></tr>
+<tr><td>Trample</td><td><b>three samples</b> of one render target, and one sampler</td></tr>
+<tr><td>Trample geometry</td><td><b>one vertex sample</b>, about 47 vertex instructions, nothing in the pixel shader</td></tr>
+</table></div>
+
+<p>Measured on the surface master: everything off is 3 taps, 4 samplers, 999 pixel instructions. Accumulation on is still 3 taps and 4 samplers, at 1025. Trample on is 6 taps, 5 samplers, 1050. The extra sampler is the clamp group, which everything clamped then shares; the wrap group the layers use is untouched.</p>
+
+<p>All of these are static switches except terrain accumulation, so an instance that does not use one does not compile it. A world where only the outdoor materials have wetness on pays nothing indoors.</p>
+
+</main>
+</body>
+</html>

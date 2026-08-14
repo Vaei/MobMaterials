@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Landscape &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Landscape</h1>
+
+<p class="lede">Terrain layers, how they blend, and what places itself. Setup is on <a href="install.html">Install</a>; the surface master is on <a href="surface.html">Surface</a>.</p>
+
+<h2>Texture packs</h2>
+
+<p>Two textures per layer, not three, because a landscape can carry a dozen layers and each one costs memory whether it is painted or not.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Suffix</th><th>Content</th><th>Compression</th></tr></thead>
+<tbody>
+<tr><td><code>_BC</code></td><td>albedo</td><td>Default, sRGB</td></tr>
+<tr><td><code>_NRM</code></td><td>tangent normal</td><td>Normalmap</td></tr>
+<tr><td><code>_HRC</code></td><td><b>H</b>eight, <b>R</b>oughness, <b>C</b>avity</td><td>Masks, sRGB off</td></tr>
+</tbody>
+</table></div>
+
+<p>Height drives the blend, so the interlock costs no extra texture.</p>
+
+<p>There is no ambient occlusion channel, on purpose. The renderer supplies its own occlusion and a baked AO map on top of it darkens twice, so the third channel carries cavity instead: it multiplies base colour and specular through the global grade and never reaches the AO pin, which stays at 1.</p>
+
+<p>Height and cavity are not the same signal. Height is macro - which layer wins where the two interlock. Cavity is micro - the crevice between two stones, which shades but never decides a blend.</p>
+
+<p>Art rarely arrives packed this way. <b>Mob → Remap Texture Channels...</b> repacks it: pick how the incoming maps are laid out - packed ORM, MRAO, RMA, or a texture each - and it fills the three output slots, which stay editable for a layout it does not know. The result is written linear as Masks and overwrites an existing asset of the same name in place, so a repack keeps every material already pointing at it. Note that no preset ever wires ambient occlusion into anything, for the reason above; point it at a slot yourself if that is genuinely what you want.</p>
+
+<h2>Working on one layer</h2>
+
+<p>The master is built to have everything on at once, which is the wrong thing to be looking at while a single layer's art is being authored. Slope rock, moss, wetness, the tiling break and the other layers all move together, and a mistake in any of them looks like a mistake in the texture.</p>
+
+<p><b>Mob → Simplify Material To Layer...</b> turns it down to one. It sets the chosen layer's weight to full and every other layer's to nothing, zeroes the slope and altitude masks, and optionally turns off the tiling break, zeroes slope rock, moss and wetness, and neutralises the per-layer grade. <b>Show Everywhere</b> additionally points every other layer's textures and tiling at the chosen one's, so unpainted ground shows it too - which is what you want when only one layer's art exists and the base layer is still a placeholder.</p>
+
+<p>Everything it touches is recorded first, keyed by the instance's path, and <b>Restore</b> in the same window puts back exactly what was there rather than the master's defaults. A layer that had already been tuned does not lose that tuning to a debugging aid. The record is per developer and is not checked in.</p>
+
+<p>Turning the tiling break off and on again is a static switch, so both directions recompile that instance's permutations.</p>
+
+<div data-shot="landscape.simplify"></div>
+
+<h2>Tile size</h2>
+
+<p><code>&lt;Layer&gt;_UVScale</code> is <b>tiles per landscape quad</b>, not per metre. A quad is one unit of the landscape actor's own scale, so what a tile measures on the ground depends on that scale, and a landscape that has been resampled or resized does not have the 100 unit quads the defaults assume. Every layer then tiles at the wrong size at once, which reads as a blurred or moire mess rather than as a wrong number - the texture is minified past its top mips and no detail survives at any distance.</p>
+
+<p><b>Mob → Fit UV Scale To Landscape...</b> does the arithmetic. It takes the landscape selected in the level (or the only one in it) and the material instance selected in the Content Browser (or whatever the landscape is rendering with), asks how many metres a tile should span, and writes every layer. Layers wanting a tighter repeat than the rest go in <b>Per Layer Tile Size</b>.</p>
+
+<p>The sum, if you would rather do it by hand: <code>UVScale = QuadCm / (TileMetres * 100)</code>. A landscape scaled 15.87 with a 4 m tile wants <code>0.0397</code>.</p>
+
+<div data-shot="landscape.uv-scale"></div>
+
+<h2>Paint layers</h2>
+
+<p>Edit <b>Layers</b> on the recipe. Each entry is a name, a physical surface and a physical material; the last two are only consumed by the project integration phases, never by the graph.</p>
+
+<p>The <b>first layer is the base</b>: it holds whatever weight the painted layers leave behind. Without that, untouched ground sits at a painted weight of zero and the first brush stroke blends against nothing, landing as a hard edge.</p>
+
+<p>Layers fold together through a chain of <code>MF_MobHeightBlendPair</code> rather than a <code>LandscapeLayerBlend</code> node, because a blend node exposes no weight to mask and the layers here have to be gated by slope and altitude.</p>
+
+<div data-shot="landscape.paint"></div>
+
+<h2>Texture arrays</h2>
+
+<p><b>Texture Array Layers</b> on the recipe samples every layer out of three arrays - one per channel, one slice per layer - instead of three textures each.</p>
+
+<p>Texture count stops growing with layer count. The master carries a slice index per layer rather than three texture parameters, so the parameter list stays readable at eight layers and the material stops being the reason not to add a ninth.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Five layers plus moss</th><th>Texture parameters</th><th>Samplers</th><th>Pixel taps</th><th>PS instructions</th></tr></thead>
+<tbody>
+<tr><td>Loose textures</td><td>19</td><td>5</td><td>37</td><td>1779</td></tr>
+<tr><td>Texture arrays</td><td><b>4</b></td><td>5</td><td>37</td><td>1794</td></tr>
+</tbody>
+</table></div>
+
+<p>The shader is not the point: samplers and taps are identical, and the slice appends cost about fifteen instructions. What changes is that eighteen texture objects become three, which is what makes a large layer set practical at all - and array slices share the wrap sampler exactly like loose textures do, so the sampler budget is no more in play than before.</p>
+
+<p>Set <b>Layer Texture Root</b> and run <b>Mob → Pack Layers for \&lt;Recipe\&gt;</b>. Each layer is matched by name against a channel suffix - <code>_BC</code>, <code>_BaseColor</code>, <code>_basecolor</code> for colour, <code>_NRM</code>, <code>_Normal</code> for normals, <code>_HRC</code>, <code>_HeigRougAO</code> for the mask pack - searched recursively, so per-layer subfolders are fine. The log lists the slice order and names any layer it could not resolve.</p>
+
+<p>Slices are the recipe's layer order, <b>with moss last</b>. Moss is an overlay the master adds itself rather than a layer anyone asked for, so if no moss texture is found it borrows the first layer's and says so, instead of failing the pack.</p>
+
+<div class="important">
+Every layer's textures must share one resolution and one format per channel. That is what a texture array is, not a limitation here - and it is why the packer refuses rather than substituting. Swapping one layer's art means a repack, not a parameter change.
+</div>
+
+<div class="caution">
+Pack before generating, and repack after changing the layer list. The master samples whatever is at each slice index and cannot tell that a slice is not the art the layer wanted, so a stale array reads as the wrong texture on the wrong layer rather than as an error.
+</div>
+
+<div data-shot="landscape.arrays"></div>
+
+<h2>Blending</h2>
+
+<p>Shared by every transition, so the whole terrain reads the same:</p>
+
+<div class="tw"><table>
+<tr><td><code>BlendHeightContrast</code></td><td>how wide a band the interlock happens over</td></tr>
+<tr><td><code>BlendHeightAmount</code></td><td>0 is a plain cross-fade, 1 is a pure height interlock</td></tr>
+</table></div>
+
+<div class="note">
+Contrast only widens the band the interlock happens over; it never softens the interlock itself, so a low value always reads as a hard crunchy edge however soft the brush was. Fading back toward the paint weight is what actually gives a gradient, which is what <code>BlendHeightAmount</code> does.
+</div>
+
+<div data-shot="landscape.blend"></div>
+
+<h2>Tiling break</h2>
+
+<p>Per layer, chosen by two static bools, so an unused tier compiles out entirely.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Tier</th><th>Taps</th><th></th></tr></thead>
+<tbody>
+<tr><td><b>None</b></td><td>1</td><td>straight sample</td></tr>
+<tr><td><b>Cheap</b></td><td>1</td><td>modulated by the macro noise the master samples once for all layers</td></tr>
+<tr><td><b>Dual</b></td><td>2</td><td>a second scale overlaid, breaking the macro repeat without halving contrast</td></tr>
+<tr><td><b>Hex</b></td><td>3</td><td>stochastic hex-tile sampling. No repeat survives it</td></tr>
+</tbody>
+</table></div>
+
+<p>Dual combines as an overlay rather than a lerp: a lerp of two scales just halves the contrast and reads as blur, where overlay keeps the detail and only disturbs the low frequency that made the repeat visible.</p>
+
+<p>Hex blends three taps, which averages away the texture's variance and leaves it washed out, so <code>VarianceRestore</code> pushes the result back out from the texture's mean. <code>MeanColor</code> is a per-layer parameter because it is a property of the source art, not something the shader can know.</p>
+
+<p>Every tier takes explicit gradients. The layer samplers are Shared:Wrap, so an implicit sample inside a Custom node would take its derivatives from the wrong place once UVs are rotated or offset per cell, and mip selection would fight the coordinates across a cell seam.</p>
+
+<div data-shots="landscape.hex, landscape.variance"></div>
+
+<h2>Layer masks</h2>
+
+<p>Per layer, through <code>MF_MobLayerWeight</code>:</p>
+
+<div class="tw"><table>
+<tr><td><code>SlopeMin</code>, <code>SlopeMax</code>, <code>SlopeAmount</code></td><td>fade a layer out as the ground steepens</td></tr>
+<tr><td><code>AltitudeMin</code>, <code>AltitudeMax</code>, <code>AltitudeFeather</code>, <code>AltitudeAmount</code></td><td>band a layer over world Z, for a waterline or a snowline</td></tr>
+</table></div>
+
+<p>Both compare against cosines and smoothsteps rather than calling <code>acos</code>, so there is no trigonometry in the inner loop.</p>
+
+<h2>Slope rock</h2>
+
+<p><code>MF_MobSlopeRock</code> overlays the Rock layer wherever the ground is steeper than <code>SlopeStart</code>, reaching full by <code>SlopeEnd</code>, so cliffs do not have to be painted. <code>HeightContrast</code> and <code>HeightAmount</code> control the interlock at the transition, <code>NoiseAmount</code> breaks the boundary with the shared macro noise.</p>
+
+<div data-shot="landscape.slope-rock"></div>
+
+<h2>Moss</h2>
+
+<p><code>MF_MobTerrainMoss</code> grows moss where moss actually grows, from four independently weighted signals:</p>
+
+<div class="tw"><table>
+<tr><td><b>Cavity</b></td><td>crevices between stones, from the blended layer height. Derivative-free, so unlike a screen-space curvature it does not swim under camera motion</td></tr>
+<tr><td><b>Slope</b></td><td>flat tops or steep faces, whichever <code>SlopeFavour</code> asks for</td></tr>
+<tr><td><b>Shade</b></td><td>faces turned away from the sun. <code>SunDirection</code> is a parameter rather than a light, so it stays a per-level constant</td></tr>
+<tr><td><b>Noise</b></td><td>the shared macro noise, so the coverage is not uniform</td></tr>
+</table></div>
+
+<p><code>Amount</code> is the global dial, and a painted <code>Moss</code> layer adds on top. Moss and wetness are overlays: they sample like a layer but their weight is a painted alpha rather than a weight-blended one, so they never compete for the normalised weight.</p>
+
+<div data-shot="landscape.moss"></div>
+
+<h2>Wetness</h2>
+
+<p><code>MF_MobTerrainWetness</code> darkens and smooths the surface, and flattens it out completely where water stands. <code>Darkening</code>, <code>RoughnessTarget</code>, <code>NormalFlatten</code> for the damp pass; <code>PuddleDepth</code> and <code>PuddleRoughness</code> for standing water, which sits in the deepest part of the cavity and so needs a harder threshold than the darkening around it.</p>
+
+<p>The mask feeds the physical material output, so wet dirt reads as mud underfoot.</p>
+
+<h2>Accumulation</h2>
+
+<p><code>MF_MobTerrainAccumulation</code> lays snow, dust or ash over the finished terrain, weighted by which way the ground faces and biased into the crevices. It costs no samples: it reuses the blended cavity and the surface normal.</p>
+
+<div class="tw"><table>
+<tr><td><code>Accumulation_Amount</code></td><td>how much has fallen. This is the one to drive</td></tr>
+<tr><td><code>Accumulation_Colour</code></td><td>white and slightly blue is snow; a warm grey is dust</td></tr>
+<tr><td><code>Accumulation_Facing</code></td><td>how up-facing the ground must be to hold any</td></tr>
+<tr><td><code>Accumulation_CavityBias</code></td><td>how much it favours crevices, where a thin covering starts and the last of it survives</td></tr>
+<tr><td><code>Accumulation_NoiseAmount</code></td><td>breaks the line between covered and bare, so it does not read as a threshold</td></tr>
+<tr><td><code>Accumulation_CoverRoughness</code></td><td>snow is rough. High</td></tr>
+<tr><td><code>Accumulation_TrampleErase</code></td><td>how completely a footprint clears the covering</td></tr>
+</table></div>
+
+<p>There is no static switch: it is arithmetic on values the material already has, so <code>Amount</code> at 0 costs what a switch would have saved. The recipe's <b>Landscape Accumulation</b> decides whether it is in the master at all.</p>
+
+<p>A <b>paint layer with a slope mask</b> is still the better answer where snow has to drift in one particular place. This is for a fall that covers everything at once and can be driven from a single number. <a href="weather.html">Weather</a> has the numbers that separate snow from dust and ash.</p>
+
+<h2>Trample</h2>
+
+<p><code>bTrample</code>. A world-space record of what has been walked through, read back out of the render target <code>AMobTrampleVolume</code> draws into: the ground goes darker, its roughness moves, the surface tilts into the print, and the accumulation comes off it.</p>
+
+<p>Three taps of one render target - the point, and one texel along each axis, which is where the slope comes from. A screen-space derivative would have been one tap, but a screen-space derivative of a world-projected mask changes with the camera and the trench would slide across the ground as you turned.</p>
+
+<div class="tw"><table>
+<tr><td><code>TrampleMask</code></td><td>the render target. Must be the same asset the volume draws into</td></tr>
+<tr><td><code>Trample_Depth</code></td><td>scales what the target holds into how far the surface tilts</td></tr>
+<tr><td><code>Trample_Darkening</code></td><td>base colour multiplier where the ground is fully broken</td></tr>
+<tr><td><code>Trample_RoughnessTarget</code></td><td>wet mud is smoother, broken snow is rougher. Both live here</td></tr>
+<tr><td><code>Trample_NormalStrength</code></td><td>how far the trench tilts the surface</td></tr>
+<tr><td><code>bTrampleWPO</code></td><td>sinks the ground into a print for real, rather than only shading like it. One vertex tap, off by default</td></tr>
+<tr><td><code>Trample_WPODepth</code></td><td>how far a full strength print sinks, in world units</td></tr>
+<tr><td><code>Trample_WPOFadeStart</code>, <code>Trample_WPOFadeLength</code></td><td>where the trench flattens out again with distance</td></tr>
+</table></div>
+
+<p>The whole system - placing a volume, what writes it, what it costs and what it cannot do - is in <a href="weather.html#trample">Weather</a>.</p>
+
+<h2>Global grade</h2>
+
+<p>One Custom node at the end of the chain: <code>GlobalHue</code>, <code>GlobalSaturation</code>, <code>GlobalValue</code>, <code>GlobalTint</code>, <code>GlobalNormalFlatten</code>, <code>GlobalRoughnessMin</code>, plus a distance desaturation and a distance colour for aerial perspective.</p>
+
+<h2>Debug views</h2>
+
+<p><code>bDebug</code>, then <code>DebugMode</code>, which is a named list on the instance rather than an index:</p>
+
+<div class="tw"><table>
+<tr><td>Layer Weights</td><td>the first three paint layers as red, green and blue</td></tr>
+<tr><td>Cavity</td><td>blended cavity, which is also what height blending reads</td></tr>
+<tr><td>Normal</td><td>blended normal, in tangent space</td></tr>
+<tr><td>Wetness</td><td>where the terrain counts as wet</td></tr>
+<tr><td>Height</td><td>blended height. Flat grey here means nothing to blend along</td></tr>
+<tr><td>Vertex Colour</td><td>as painted</td></tr>
+<tr><td>Trample</td><td>where the ground has been walked through. Black everywhere no volume covers</td></tr>
+<tr><td>Accumulation</td><td>where snow, dust or ash has settled</td></tr>
+</table></div>
+
+<p><code>DebugExposure</code> scales the view before it is drawn. Height and weights both spend most of their time near the top of their range, and turning this down is what brings the variation that matters back into a range the eye can read.</p>
+
+<p>Weights are the first three layers rather than all of them, because a landscape blend is a chain of pairs and there is no single place holding more than that. Three is enough to read: it is the transitions between neighbouring layers that go wrong, not layer nine on its own.</p>
+
+<p>Terrain has no emissive to borrow, so the view goes to base colour with the normal flattened - an unlit read is the point, and a flat normal is the closest this gets to one.</p>
+
+<h2>Runtime virtual texture</h2>
+
+<p>A dozen paint layers blended per pixel is a lot of work to redo every frame for ground that has not changed. With <b>Build Project Outputs</b> on, the master gains a <b>runtime virtual texture output</b>: the whole blend is rendered once into a cached page and the base pass samples that instead, so the cost stops scaling with layer count.</p>
+
+<p>Two are authored - one carrying base colour, normal and roughness, one carrying world height.</p>
+
+<p><code>bUseRVT</code> on the instance chooses which path the base pass takes. Off routes it through the layer blend directly, which is what you want where <code>r.VirtualTextures</code> is off, since the sample would otherwise return nothing.</p>
+
+<p>Both are named after the master, so two landscape recipes never share a pair and write over each other's terrain.</p>
+
+<p>Two halves have to agree, and each is set somewhere else: the master samples a named texture, and the level decides what writes into it. <b>Wire Landscape Runtime Virtual Textures</b>, in the Mat menu's Level section, does the level half - it points the landscape and every proxy at the pair and fits a volume to each. Generating the recipe does the material half, and does the level half too when the open level's landscape is the one that recipe authored.</p>
+
+<p>Get only one half and the master samples a texture nothing writes, which returns zero rather than failing: base colour 0 and roughness 0, so the ground is black and mirror-smooth and nothing you set on a layer changes it. In mobile forward preview it reads instead as <code>WorldGridMaterial</code> over the unpainted layers and mirror-black over the painted ones. <code>bUseRVT</code> off is the other way out, and is the right answer where <code>r.VirtualTextures</code> is off.</p>
+
+<div data-shot="landscape.rvt"></div>
+
+<h3>Blending meshes into the terrain</h3>
+
+<p>The height RVT is what lets a mesh disappear into the ground it is standing in. <code>MF_MobRVTBlend</code> reads both textures and fades a mesh's base colour, normal and roughness into the terrain's own over the last few centimetres before its base, so a rock meets the ground instead of cutting a silhouette into it.</p>
+
+<div class="tw"><table>
+<tr><td><code>Amount</code></td><td>overall strength</td></tr>
+<tr><td><code>BlendDistance</code></td><td>world units above the terrain over which the mesh takes over</td></tr>
+<tr><td><code>BlendOffset</code></td><td>shifts the transition up or down, for a mesh whose pivot is not at its base</td></tr>
+<tr><td><code>BlendSharpness</code></td><td>how abruptly the mesh wins</td></tr>
+</table></div>
+
+<p>The terrain side comes from the virtual texture rather than a second set of layer parameters, so it always matches what the landscape actually renders - repaint the ground and the meshes standing in it follow.</p>
+
+<p>Two virtual texture samples on the mesh, so put it behind a static switch on the mesh material and only turn it on for things that sit in the ground. It is authored alongside the landscape master whenever project outputs are on, since it cannot exist before the RVTs do.</p>
+
+<h2>Project integration</h2>
+
+<p>A runtime virtual texture, footstep surfaces and grass types are <b>game</b> assets: they are sized to a landscape, named after a project's physical surfaces, and reference its meshes. Referencing them from the plugin's own material would leave it pointing at packages that do not exist anywhere else, so they are off by default.</p>
+
+<p>Tick <b>Build Project Outputs</b> on the recipe and set the paths beneath it:</p>
+
+<div class="tw"><table>
+<tr><td><b>Runtime Virtual Texture Path</b></td><td>where the two runtime virtual textures are created</td></tr>
+<tr><td><b>Physical Material Path</b>, <b>Layer Info Path</b></td><td>footstep physical materials, and the landscape's layer info assets</td></tr>
+<tr><td><b>Grass Type Path</b></td><td>grass type assets. Which meshes each one scatters is still a table in <code>Python/author_landscape.py</code></td></tr>
+</table></div>
+
+<p>Then the master gains its RVT output and sample, its physical material output and its grass output, <code>bUseRVT</code> appears on the instances, and <code>MF_&lt;AssetName&gt;RVTBlend</code> is authored alongside.</p>
+
+<div class="note">
+<code>configure_layer_infos()</code> sets blend method and physical material on layer info assets, but it cannot create them: <code>ULandscapeLayerInfoObject::LayerName</code> is <code>VisibleAnywhere</code>, so Python refuses to set it, and the function that does is not exposed. Create them once from Landscape mode with the <b>+</b> next to each target layer, then run it.
+</div>
+
+<p><code>wire_landscape_rvt()</code> points the open level's landscape at both RVTs and fits a volume to each, building the transform the same way <code>RuntimeVirtualTexture::SetBounds</code> does, since <code>BoundsAlignActor</code> and the Set Bounds button are editor-only C++.</p>
+
+</main>
+</body>
+</html>

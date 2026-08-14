@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Realistic &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Realistic</h1>
+<p class="lede">Get the scan in clean, keep its roughness variance, and let the terrain place its own detail. Everything on <a href="workflow.html">Building a world</a> still applies; this is what changes.</p>
+
+<div data-shot="realistic.scene"></div>
+
+<h2>The five moves</h2>
+
+<ol>
+<li><b>Repack before importing anything.</b> Every scan pack has AO in it, and AO here darkens twice.</li>
+<li><b>Density before art.</b> A checker on the mesh settles the UV argument in ten seconds.</li>
+<li><b>Keep the roughness range.</b> Variance is what makes a surface look real. Do not clamp it.</li>
+<li><b>Place detail from the world.</b> Moss, slope rock and puddles come from signals the material already has.</li>
+<li><b>Spend parallax once.</b> Occlusion is the only feature in either master that costs a sampler.</li>
+</ol>
+
+<h2>Repack the scan</h2>
+
+<p>Scan and library packs ship ORM, MRAO or RMA. All of them put ambient occlusion in a channel this master does not want. <b>Mat &rarr; Remap Texture Channels&hellip;</b> takes any of them to CRM.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Target</th><th>R</th><th>G</th><th>B</th></tr></thead>
+<tbody>
+<tr><td>Surface <code>_CRM</code></td><td>cavity</td><td>roughness</td><td>metallic</td></tr>
+<tr><td>Landscape <code>_HRC</code></td><td>height</td><td>roughness</td><td>cavity</td></tr>
+<tr><td>Foliage <code>_CRT</code></td><td>cavity</td><td>roughness</td><td>transmission</td></tr>
+</tbody>
+</table></div>
+
+<div class="important">
+The renderer supplies its own occlusion. A baked AO map on top of it darkens twice, and the result is a scene that looks dirty rather than shaded. Cavity takes that slot: it multiplies base colour and specular, which is what micro shadowing actually does, and never reaches the AO pin.
+</div>
+
+<p>The source AO map is thrown away, not converted. Cavity is its own bake off the same high poly - tight creases and edge curvature rather than broad occlusion - so use the pack's cavity or curvature output if it has one. Failing that, a high pass of the height map stands in.</p>
+
+<div data-shot="realistic.repack"></div>
+
+<h2>Density before art</h2>
+
+<p>Put a checker on the mesh with the intended <code>UVScale</code> and look at it next to a mesh you already trust. Realistic art lives or dies on this and no amount of shader work fixes it later.</p>
+
+<div class="tw"><table>
+<tr><td>Hero props, doors, weapons</td><td>1024 px/m</td></tr>
+<tr><td>Walls, floors, rocks</td><td>512 px/m</td></tr>
+<tr><td>Terrain layers</td><td>256 px/m</td></tr>
+</table></div>
+
+<p><code>TriplanarScale</code> is 1 &divide; tile size in cm, so a 4 m tile is <code>0.0025</code>. On the landscape, run <b>Fit UV Scale To Landscape&hellip;</b> and give it metres.</p>
+
+<div data-shot="realistic.texel"></div>
+
+<h2>Keep the roughness</h2>
+
+<p>Roughness variance is most of what separates a photographed surface from a painted one. Leave the scan's range alone and only clamp what the anti-aliasing forces you to.</p>
+
+<div class="tw"><table>
+<tr><td><code>RoughnessMin</code> / <code>RoughnessMax</code></td><td><code>0</code> / <code>1</code> - as authored</td></tr>
+<tr><td><code>Specular</code></td><td><code>0.5</code></td></tr>
+<tr><td><code>CavityContrast</code></td><td><code>1.0</code></td></tr>
+<tr><td><code>DistanceRoughnessFloor</code></td><td><code>0.35</code></td></tr>
+<tr><td><code>DistanceNormalFlatten</code></td><td><code>0.55</code></td></tr>
+</table></div>
+
+<div class="warn">
+Those last two are not optional on FXAA. Sub-pixel specular crawls without a temporal filter, and the material is the only place it can be removed. Push them up until distant surfaces stop sparkling in motion, not in a screenshot.
+</div>
+
+<div data-shot="realistic.roughness"></div>
+
+<h2>Blend subtly</h2>
+
+<p>Real materials meet along their own detail, but they do not announce it. Half the interlock a stylized scene wants.</p>
+
+<div class="tw"><table>
+<tr><td><code>BlendHeightAmount</code> / <code>BlendContrast</code></td><td><code>0.45</code> / <code>0.5</code></td></tr>
+<tr><td><code>BlendHeightAmount</code> / <code>BlendHeightContrast</code> <i>(landscape)</i></td><td><code>0.35</code> / <code>0.5</code></td></tr>
+<tr><td><code>Variation_HueRange</code></td><td><code>4</code> degrees</td></tr>
+<tr><td><code>Variation_SaturationRange</code> / <code>ValueRange</code></td><td><code>0.06</code> / <code>0.12</code> - value over hue, the opposite of stylized</td></tr>
+</table></div>
+
+<div data-shot="realistic.interlock"></div>
+
+<h2>Let the terrain place its own detail</h2>
+
+<p>Three systems put material where material goes, from data the shader already has. None of them needs painting and none costs a texture sample.</p>
+
+<h3>Slope rock</h3>
+
+<p>Name a recipe layer <code>Rock</code> and it overlays wherever the ground gets steep.</p>
+
+<div class="tw"><table>
+<tr><td><code>SlopeRock_SlopeStart</code> / <code>SlopeEnd</code></td><td><code>32</code> / <code>55</code> degrees</td></tr>
+<tr><td><code>SlopeRock_HeightAmount</code> / <code>HeightContrast</code></td><td><code>0.5</code> / <code>0.5</code></td></tr>
+<tr><td><code>SlopeRock_NoiseAmount</code></td><td><code>0.15</code> - enough that the boundary is not a contour line</td></tr>
+</table></div>
+
+<h3>Moss</h3>
+
+<p>Four weighted signals: crevices, slope, faces turned away from the sun, and noise. Start with amount and leave the rest.</p>
+
+<div class="tw"><table>
+<tr><td><code>Moss_Amount</code></td><td><code>0.35</code></td></tr>
+<tr><td><code>Moss_CavityAmount</code> / <code>CavityContrast</code></td><td><code>1</code> / <code>1.5</code> - moss in the crevices</td></tr>
+<tr><td><code>Moss_ShadeAmount</code> / <code>ShadeSoftness</code></td><td><code>1</code> / <code>0.5</code> - moss off the sun</td></tr>
+<tr><td><code>Moss_NoiseAmount</code> / <code>NoiseContrast</code></td><td><code>1</code> / <code>2</code></td></tr>
+<tr><td><code>SunDirection</code></td><td>must match your directional light, or shade lands on the wrong faces</td></tr>
+</table></div>
+
+<div data-shot="realistic.moss"></div>
+
+<h3>Puddles</h3>
+
+<p>Water gathers by porosity, which comes from cavity, and stands only on surfaces facing up. There is no puddle mask to paint.</p>
+
+<div class="tw"><table>
+<tr><td><code>Wetness_Darkening</code></td><td><code>0.55</code></td></tr>
+<tr><td><code>Wetness_RoughnessTarget</code></td><td><code>0.25</code></td></tr>
+<tr><td><code>Wetness_PorosityAmount</code></td><td><code>1</code></td></tr>
+<tr><td><code>Wetness_PuddleDepth</code></td><td><code>0.15</code>-<code>0.25</code></td></tr>
+<tr><td><code>Wetness_PuddleFacing</code></td><td><code>0.8</code></td></tr>
+<tr><td><code>bRipples</code></td><td>on, with a real ripple normal. The generic noise default reads as glass</td></tr>
+</table></div>
+
+<div data-shot="realistic.puddles"></div>
+
+<h2>Spend parallax once</h2>
+
+<p>Cheap offset is one multiply and an add, and it sells brick, cobbles and plank floors at a grazing angle. Occlusion walks the height field and is the only thing in either master that spends a sampler slot, because a raymarch cannot be expressed as graph taps.</p>
+
+<div class="tw"><table>
+<tr><td><code>LayerN_Parallax</code></td><td>the cheap one. Use it freely</td></tr>
+<tr><td><code>LayerN_ParallaxOcclusion</code></td><td>one hero surface. <code>ParallaxAmount</code> <code>0.04</code>, <code>ParallaxSteps</code> <code>16</code></td></tr>
+</table></div>
+
+<div data-shot="realistic.parallax"></div>
+
+<h2>Checklist</h2>
+
+<ul>
+<li>Every incoming pack went through Remap Texture Channels, and no AO map is assigned anywhere.</li>
+<li>Texel density was checked with a checker, not by eye on the final art.</li>
+<li>No layer clamps its roughness range.</li>
+<li>Slope rock, moss and puddles are placed by the material, not painted.</li>
+<li><code>SunDirection</code> matches the directional light.</li>
+<li>Parallax occlusion appears on at most one surface in the scene.</li>
+<li>Nothing sparkles in motion at ES3.1 with FXAA on.</li>
+</ul>
+
+<h2>Further reading</h2>
+
+<div class="tw"><table class="free">
+<tr><td><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/physically-based-materials-in-unreal-engine">Physically Based Materials</a></td><td>base colour, metallic and roughness ranges. The part worth memorising</td></tr>
+<tr><td><a href="https://blog.daftsoftware.com/unreal-perf-maxing/">Unreal Perf Maxing</a></td><td>what the mobile forward path will and will not give you back</td></tr>
+<tr><td><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/runtime-virtual-texturing-in-unreal-engine">Runtime virtual texturing</a></td><td>what the terrain blend is built on</td></tr>
+<tr><td><a href="https://www.youtube.com/@BenCloward">Ben Cloward</a></td><td>parallax, triplanar and detail normals, node by node</td></tr>
+</table></div>
+
+<p><a class="cta" href="tutorial.html">Then the full feature walk &rarr;</a></p>
+
+</main>
+</body>
+</html>

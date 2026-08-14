@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>If it is wrong &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>If it is wrong</h1>
+<p class="lede">Symptom to cause, in order of likelihood.</p>
+
+<h2>Landscape</h2>
+
+<div class="tw"><table class="free">
+<thead><tr><th>Symptom</th><th>Cause</th></tr></thead>
+<tbody>
+<tr><td>Layers cross-fade into mush</td><td><code>BlendHeightAmount</code> is 0, which is the plain cross-fade. Raise it, then widen <code>BlendHeightContrast</code></td></tr>
+<tr><td>A transition is a hard crunchy edge</td><td><code>BlendHeightContrast</code> too low. Contrast only widens the interlock band, it never softens the interlock itself</td></tr>
+<tr><td>Hex tiling looks washed out</td><td>three taps average the variance away. Raise <code>VarianceRestore</code> and set <code>MeanColor</code> to the texture's actual average</td></tr>
+<tr><td>A layer will not paint</td><td>its layer info asset does not exist yet. Create it from Landscape mode with the <b>+</b> beside the target layer, then run <code>configure_layer_infos()</code></td></tr>
+<tr><td>Mip seams across hex cells</td><td>a tap lost its explicit gradients. Every tier needs them: the samplers are Shared:Wrap and the coordinates are discontinuous per cell</td></tr>
+<tr><td>Grass or footsteps do nothing</td><td><b>Build Project Outputs</b> is off on the recipe, so those outputs are not on the material</td></tr>
+<tr><td>Meshes cut a hard silhouette into the ground</td><td><code>MF_&lt;AssetName&gt;RVTBlend</code> is only authored with Build Project Outputs on, and has to be added to the mesh's own material</td></tr>
+<tr><td>Ground is black and mirror-smooth whatever the layers are set to</td><td><code>bUseRVT</code> is on and nothing writes the texture it samples, so the sample reads zero: base colour 0 and roughness 0. <b>Wire Landscape Runtime Virtual Textures</b> points the landscape at it, and generating the recipe points the master at the same pair. In mobile forward preview the same cause reads as <code>WorldGridMaterial</code> over the unpainted layers and mirror-black over the painted ones; in deferred it is mirror-black throughout</td></tr>
+<tr><td>Terrain renders but ignores paint</td><td><code>bUseRVT</code> is on and the RVT volume is missing or unfitted. Run <b>Wire Landscape Runtime Virtual Textures</b>, or turn <code>bUseRVT</code> off</td></tr>
+<tr><td>Every layer tiles at the wrong size at once</td><td>the landscape was resized and does not have the quads the defaults assume. <b>Fit UV Scale To Landscape&hellip;</b></td></tr>
+</tbody>
+</table></div>
+
+<div data-shots="troubleshooting.rvt-black, troubleshooting.mush"></div>
+
+<h2>Surface</h2>
+
+<div class="tw"><table class="free">
+<thead><tr><th>Symptom</th><th>Cause</th></tr></thead>
+<tbody>
+<tr><td>An unpainted mesh is covered in the top layer</td><td>vertex colour is inverted from what you expect. Black adds, white is neutral. Fill white, paint black</td></tr>
+<tr><td>A mesh is soaking wet with wetness at 0</td><td>same cause: vertex colour blue is a wetness boost and it reads black as wet</td></tr>
+<tr><td>Triplanar texture swims or lights from the wrong side</td><td>the layer is triplanar but the mesh is being scaled non-uniformly <i>and</i> rotated. Triplanar is world-aligned by definition and does not rotate with the object</td></tr>
+<tr><td>Distant surfaces sparkle</td><td>the distance clamp is disabled by its scalars. Raise <code>DistanceNormalFlatten</code> and <code>DistanceRoughnessFloor</code></td></tr>
+<tr><td>Masked instance clips everything</td><td>the opacity mask is read from <b>alpha</b>, not a colour channel. A greyscale mask in RGB samples as 1 in alpha, or as 0 if the texture has none</td></tr>
+<tr><td>Metal everywhere</td><td>the <code>_CRM</code> blue channel is metallic. A pack that puts occlusion there needs <code>MetallicScale</code> at 0</td></tr>
+<tr><td>Foliage went flat and dark when <code>bTransmissionMap</code> was ticked</td><td>the pack in <code>Layer0_CRT</code> has metallic in blue, not transmission, and metallic is 0 on a plant - so no light gets through. Repack it: <b>Remap Texture Channels</b>, target <b>CRT</b></td></tr>
+<tr><td>Macro variation does nothing</td><td><code>MacroNoiseTexture</code> defaults to a flat 4x4. It needs a real tiling noise, which the plugin does not ship</td></tr>
+<tr><td>Emissive does nothing</td><td><code>EmissiveMask</code> defaults to black. Assign a mask, or a white texture for a flat glow</td></tr>
+<tr><td>Custom primitive data does nothing</td><td><b>Num Custom Data Floats</b> on the component is below 6. Tint is indices 0-3, roughness 4, wetness 5</td></tr>
+</tbody>
+</table></div>
+
+<div data-shot="troubleshooting.vertex-white"></div>
+
+<h2>Everything</h2>
+
+<div class="tw"><table class="free">
+<thead><tr><th>Symptom</th><th>Cause</th></tr></thead>
+<tbody>
+<tr><td>A feature is on, costs its samples, and visibly does nothing</td><td>its texture is still the 4x4 neutral. <code>MacroNoiseTexture</code>, <code>DetailNormal</code>, <code>RippleNormal</code> and <code>EmissiveMask</code> all default to flat placeholders - see <a href="tutorial.html#art-you-have-to-supply">Art you have to supply</a></td></tr>
+<tr><td>It compiles on desktop and looks wrong in a build</td><td>the preview platform is SM5 or SM6. Set it to Android ES3.1 or PC D3D Mobile</td></tr>
+<tr><td>The material will not compile at all</td><td><code>r.Substrate</code> is on. These are legacy material graphs</td></tr>
+<tr><td>The editor has locked up mid-generate</td><td>it is working, not hung. A landscape with a dozen layers rebuilds several hundred nodes and recompiles</td></tr>
+</tbody>
+</table></div>
+
+</main>
+</body>
+</html>

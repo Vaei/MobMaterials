@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stylized &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Stylized</h1>
+<p class="lede">Pick the colours first, then take detail out until the drawing is the thing that reads. Everything on <a href="workflow.html">Building a world</a> still applies; this is what changes.</p>
+
+<div data-shot="stylized.scene"></div>
+
+<h2>The five moves</h2>
+
+<ol>
+<li><b>Palette before texture.</b> Five to eight colours, and every layer graded into them.</li>
+<li><b>One roughness band.</b> Clamp it. Sparkle is noise, and noise is the enemy of a read.</li>
+<li><b>Cavity carries the shading.</b> Bake it, then push its contrast further than you would for realism.</li>
+<li><b>Normals do form, not detail.</b> Broad shapes, detail weighted right down.</li>
+<li><b>Vary hue, not value.</b> Value variation muddies a palette; hue variation enriches it.</li>
+</ol>
+
+<h2>Palette</h2>
+
+<p>Grade layers to the palette rather than repainting the textures. Every layer has the same set of controls, so one grass texture can serve three biomes.</p>
+
+<div class="tw"><table>
+<tr><td><code>&lt;Layer&gt;_HueShift</code>, <code>Saturation</code>, <code>Value</code>, <code>Contrast</code></td><td>pull the source art onto the palette</td></tr>
+<tr><td><code>&lt;Layer&gt;_Tint</code></td><td>the palette colour itself</td></tr>
+<tr><td><code>MacroTintA</code>, <code>MacroTintB</code></td><td>two palette colours the macro noise crossfades between across the world</td></tr>
+<tr><td><code>GlobalHue</code>, <code>GlobalSaturation</code>, <code>GlobalValue</code>, <code>GlobalTint</code> <i>(landscape)</i></td><td>the whole terrain at once - a season, a time of day, a region</td></tr>
+</table></div>
+
+<div class="tip">
+UE's Color Ramp node cannot be edited without recompiling the base material. <a href="https://github.com/Vaei/GradientTool">Gradient Tool</a> gives you gradients you can drag in realtime, which is how the Valorant and TF2 techniques are actually authored.
+</div>
+
+<div data-shot="stylized.palette"></div>
+
+<h2>Roughness: one band</h2>
+
+<p>A stylized surface is not describing a real material, so a wide roughness range buys nothing and costs clarity. Clamp every layer into a narrow band and let cavity do the variation.</p>
+
+<div class="tw"><table>
+<tr><td><code>RoughnessMin</code> / <code>RoughnessMax</code></td><td><code>0.35</code> / <code>0.6</code></td></tr>
+<tr><td><code>Specular</code></td><td><code>0.35</code> - lower than the physical 0.5, so highlights stay off the silhouette</td></tr>
+<tr><td><code>DistanceRoughnessFloor</code></td><td><code>0.5</code></td></tr>
+<tr><td><code>DistanceNormalFlatten</code></td><td><code>0.75</code></td></tr>
+</table></div>
+
+<p>The last two matter more here than anywhere: with FXAA and no temporal filter, sub-pixel specular crawls, and a stylized scene has nothing busy enough to hide it.</p>
+
+<div data-shot="stylized.roughness"></div>
+
+<h2>Cavity carries the shading</h2>
+
+<p>Cavity is baked, the same way AO is and off the same high poly, but it reads tight creases and edge curvature rather than broad occlusion. It multiplies base colour and specular. A flat palette has given up most of its shading detail, so this map is doing more work here than it would in a realistic scene - bake it deliberately and then push it harder.</p>
+
+<div class="tw"><table>
+<tr><td><code>CavityContrast</code></td><td><code>1.6</code></td></tr>
+<tr><td><code>CavityColorAmount</code></td><td><code>0.8</code></td></tr>
+<tr><td><code>CavitySpecularAmount</code></td><td><code>0.7</code></td></tr>
+</table></div>
+
+<div class="note">
+Cavity is also the height source the blend resolves against, so the same creases decide where the next layer comes through. A cavity bake with clear, chunky forms gives clear transitions for free.
+</div>
+
+<div data-shot="stylized.cavity"></div>
+
+<h2>Normals: form, not noise</h2>
+
+<p>High-frequency normal detail fights a flat palette. Keep the broad forms and weight the fine layer down.</p>
+
+<div class="tw"><table>
+<tr><td><code>NormalIntensity</code></td><td><code>0.7</code></td></tr>
+<tr><td><code>DetailScale</code> / <code>DetailStrength</code></td><td><code>6</code> / <code>0.25</code></td></tr>
+</table></div>
+
+<h2>Interlock hard</h2>
+
+<p>A stylized transition should look chosen. Push the interlock until the boundary reads as a shape rather than a fade.</p>
+
+<div class="tw"><table>
+<tr><td><code>BlendHeightAmount</code></td><td><code>0.85</code></td></tr>
+<tr><td><code>BlendContrast</code></td><td><code>0.75</code></td></tr>
+<tr><td><code>BlendHeightAmount</code> / <code>BlendHeightContrast</code> <i>(landscape)</i></td><td><code>0.7</code> / <code>0.7</code></td></tr>
+</table></div>
+
+<div data-shot="stylized.interlock"></div>
+
+<h2>Vary hue, not value</h2>
+
+<p>Value variation across a palette turns it to mud. Hue variation is what makes a stylized world feel painted rather than tiled.</p>
+
+<div class="tw"><table>
+<tr><td><code>Variation_HueRange</code></td><td><code>14</code> degrees</td></tr>
+<tr><td><code>Variation_SaturationRange</code></td><td><code>0.18</code></td></tr>
+<tr><td><code>Variation_ValueRange</code></td><td><code>0.06</code></td></tr>
+<tr><td><code>Variation_MacroTintAmount</code></td><td><code>0.7</code></td></tr>
+<tr><td><code>Variation_MacroValueAmount</code></td><td><code>0.1</code></td></tr>
+</table></div>
+
+<p>On the landscape, do the same to depth: <code>DistanceDesaturation</code> <code>0.25</code>, <code>DistanceColor</code> set to a sky colour from the palette, <code>DistanceColorAmount</code> <code>0.35</code>. That is aerial perspective, painted rather than fogged.</p>
+
+<div data-shot="stylized.macro-hue"></div>
+
+<h2>Foliage</h2>
+
+<p>Light through a leaf is the single most stylized-looking thing the foliage master does. Push it further than physics would.</p>
+
+<div class="tw"><table>
+<tr><td><code>SubsurfaceColor</code></td><td>a saturated palette green, brighter than the leaf itself</td></tr>
+<tr><td><code>TransmissionAmount</code></td><td><code>1.0</code>-<code>1.5</code></td></tr>
+<tr><td><code>WindStrength</code> / <code>WindSpeed</code></td><td><code>9</code> / <code>0.9</code> - large and slow reads as animation, not as jitter</td></tr>
+<tr><td><code>WindFlutterStrength</code> / <code>WindFlutterSpeed</code></td><td><code>3.5</code> / <code>4</code></td></tr>
+</table></div>
+
+<div data-shot="stylized.foliage"></div>
+
+<h2>Weather as a colour shift</h2>
+
+<p>Realistic wetness darkens and tightens the specular. Stylized wetness should mostly change the colour, because a palette can survive a hue move and cannot survive going dark.</p>
+
+<div class="tw"><table>
+<tr><td><code>Wetness_Darkening</code></td><td><code>0.35</code></td></tr>
+<tr><td><code>Wetness_RoughnessTarget</code></td><td><code>0.2</code></td></tr>
+<tr><td><code>Wetness_SpecularTarget</code></td><td><code>0.55</code></td></tr>
+<tr><td><code>Accumulation_NoiseAmount</code></td><td><code>0.25</code> - cleaner snow shapes, less speckle</td></tr>
+<tr><td><code>Accumulation_Facing</code></td><td><code>0.45</code> - snow climbs further round a form</td></tr>
+</table></div>
+
+<h2>Checklist</h2>
+
+<ul>
+<li>The palette exists as an asset, and every layer's <code>Tint</code> came out of it.</li>
+<li>No layer has a roughness range wider than 0.3.</li>
+<li>Cavity was baked from the high poly, not generated from the normal map as an afterthought.</li>
+<li>Hue range is larger than value range on every variation.</li>
+<li>Nothing sparkles at 30 m. Check it at ES3.1 with FXAA on, moving.</li>
+<li>The scene reads in the Layer Weights debug view as clear shapes, not a gradient.</li>
+</ul>
+
+<h2>Further reading</h2>
+
+<div class="tw"><table class="free">
+<tr><td><a href="https://technology.riotgames.com/news/valorant-shaders-and-gameplay-clarity">Valorant: shaders and gameplay clarity</a></td><td>clarity as an art direction constraint, on this exact renderer</td></tr>
+<tr><td><a href="https://www.valvesoftware.com/en/publications">Valve publications</a></td><td><i>Illustrative Rendering in Team Fortress 2</i>, 2007. The paper the above is built on: rim light, view-independent shading, palette control</td></tr>
+<tr><td><a href="https://github.com/Vaei/GradientTool">Gradient Tool</a></td><td>realtime gradients, which these techniques need</td></tr>
+<tr><td><a href="https://www.youtube.com/@BenCloward">Ben Cloward</a></td><td>stylized shading breakdowns, node by node</td></tr>
+</table></div>
+
+<p><a class="cta" href="realistic.html">Compare with realistic &rarr;</a></p>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Surface &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Surface</h1>
+
+<p class="lede">Props, buildings, rocks and anything else that is not terrain. Setup is on <a href="install.html">Install</a>; the landscape master is on <a href="landscape.html">Landscape</a>.</p>
+
+<h2>Texture packs</h2>
+
+<p>Three samplers per layer.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Suffix</th><th>Content</th><th>Compression</th></tr></thead>
+<tbody>
+<tr><td><code>_BaseColor</code></td><td>albedo</td><td>Default, sRGB</td></tr>
+<tr><td><code>_Normal</code></td><td>tangent normal</td><td>Normalmap</td></tr>
+<tr><td><code>_CRM</code></td><td><b>C</b>avity, <b>R</b>oughness, <b>M</b>etallic</td><td>Masks, sRGB off</td></tr>
+<tr><td><code>_CRT</code></td><td><b>C</b>avity, <b>R</b>oughness, <b>T</b>ransmission - foliage only</td><td>Masks, sRGB off</td></tr>
+</tbody>
+</table></div>
+
+<p>There is no ambient occlusion channel, on purpose. The renderer supplies its own occlusion and a baked AO map on top of it darkens twice. Cavity takes that slot instead, and it does double duty as the height field for layer blending, so height blending needs no fourth texture.</p>
+
+<p>Blue is the only channel that means two things, and which one it means is decided by the master rather than the texture. A standard master reads it as metallic; a foliage master reads it as transmission, because a plant is never metal and the sample is paid for either way. See <a href="foliage.html">Foliage</a>.</p>
+
+<p>Art almost never arrives packed as CRM. <b>Mob → Remap Texture Channels...</b> repacks it: choose how the incoming maps are laid out - packed ORM, MRAO, RMA, or a texture each - and it fills the three output slots, which stay editable for anything it does not recognise. No preset wires ambient occlusion anywhere, for the reason above.</p>
+
+<p>Every texture parameter defaults to a 4x4 neutral in <code>Textures/</code>. That matters more than it sounds: a parameter left at its default still holds a reference and still loads, even when its sample has been compiled out of a dead branch. Defaulting to a 4x4 makes an unused slot free.</p>
+
+<div data-shot="surface.packs"></div>
+
+<h2>Layers</h2>
+
+<p>Three, each a full pack with its own <code>UVScale</code>, <code>UVRotation</code>, <code>UVOffsetU</code>/<code>V</code>, and its own grading. Layers 1 and 2 are gated by <code>bLayer1</code> and <code>bLayer2</code>.</p>
+
+<p>Blending is height-aware, resolved against cavity, so layers interlock along their detail rather than cross-fading:</p>
+
+<div class="tw"><table>
+<tr><td><code>BlendHeightAmount</code></td><td>0 is a plain cross-fade, 1 is a pure height interlock</td></tr>
+<tr><td><code>BlendContrast</code></td><td>how wide a band the interlock happens over. Low reads as a hard crunchy edge</td></tr>
+<tr><td><code>LayerN_HeightBias</code></td><td>pushes one layer up or down the blend</td></tr>
+</table></div>
+
+<div data-shot="surface.blend-height"></div>
+
+<h2>Vertex paint</h2>
+
+<p><b>Black adds, white is neutral.</b></p>
+
+<div class="tw"><table>
+<thead><tr><th>Channel</th><th>White</th><th>Black</th></tr></thead>
+<tbody>
+<tr><td>R</td><td>layer 0</td><td>layer 1</td></tr>
+<tr><td>G</td><td>layer 0</td><td>layer 2</td></tr>
+<tr><td>B</td><td>dry</td><td>wet</td></tr>
+<tr><td>A</td><td>no darkening</td><td>darkened</td></tr>
+</tbody>
+</table></div>
+
+<div class="important">
+A mesh with no vertex colour buffer gets white from the vertex factory. That is why neutral is white rather than black: any mesh that reaches this material unpainted would otherwise arrive as the top layer, soaking wet, with nothing to say so. It costs the usual convention - the brush is subtractive, so you paint black to add a layer - and buys a default that is right.
+</div>
+
+<p><code>bVertexPaint</code> off swaps the channels for <code>Layer1Weight</code> / <code>Layer2Weight</code> / <code>WetnessPaint</code> / <code>VertexShade</code> scalars, for meshes that cannot be painted.</p>
+
+<div data-shot="surface.vertex-paint"></div>
+
+<h2>Projection</h2>
+
+<p>Per layer, <code>LayerN_Triplanar</code>. Off is a single mesh-UV tap. On is world-aligned triplanar: three taps per texture, correct under non-uniform scale, no UVs needed.</p>
+
+<p><code>TriplanarScale</code> is world units to UV. <code>TriplanarSharpness</code> is how narrowly the three projections cross-fade.</p>
+
+<p>Normals are handled properly rather than blended flat: each projection is reoriented against the geometric normal with a whiteout blend before the three are combined, then the result is taken back to tangent space. A face that is mostly but not exactly axis-aligned keeps the slope the other two projections were carrying.</p>
+
+<div data-shot="surface.triplanar"></div>
+
+<h2>Tiling break</h2>
+
+<p><code>LayerN_TileBreak</code>. A second tiling of the same texture, at a scale and rotation incommensurate with the first, crossfaded in with distance.</p>
+
+<p>The repeat only becomes visible once enough tiles are on screen at once, so the break is bound to distance rather than applied everywhere: near keeps the detail it was authored with, far dissolves the grid.</p>
+
+<div class="tw"><table>
+<tr><td><code>TileBreakScale</code></td><td>second tiling relative to the first. Keep it irrational-ish - 0.37 rather than 0.5, or the two repeats line up and you have made a bigger grid</td></tr>
+<tr><td><code>TileBreakStart</code>, <code>TileBreakFalloff</code></td><td>where it comes in</td></tr>
+<tr><td><code>TileBreakAmount</code></td><td>how far it goes</td></tr>
+</table></div>
+
+<p>The two tilings combine as an <b>overlay</b>, not a lerp. A lerp of two scales halves the contrast and reads as blur, trading one artefact for another; overlay keeps the detail and only disturbs the low frequency that made the repeat visible. Normals blend rather than multiply, which would flatten them.</p>
+
+<p><b>Mesh-UV path only.</b> With triplanar on it does nothing: that already samples three ways, and breaking it too would be nine taps to solve a repeat the projection has largely hidden.</p>
+
+<p>Three extra samples on any layer that uses it. Leave <b>Distance Tiling Break</b> off on the recipe and it is not in the master at all.</p>
+
+<h2>Parallax</h2>
+
+<p>Two modes per layer, both shifting the UV along the view direction so a flat surface reads as though it has depth. Neither changes the silhouette: at a grazing angle the edge is still flat, which is the honest limit of the trick.</p>
+
+<p><code>LayerN_Parallax</code> turns it on. <code>LayerN_ParallaxOcclusion</code> picks the expensive mode.</p>
+
+<div class="tw"><table>
+<tr><td><b>Offset</b> (default)</td><td>one step. A multiply and an add on top of one extra height tap. Sells brick, cobbles and plank gaps at anything but a grazing angle. This is the one to reach for here</td></tr>
+<tr><td><b>Occlusion</b></td><td>raymarched. Walks the view ray through the height field until it goes under, then refines between the last two samples so the step count does not band. Genuinely expensive</td></tr>
+</table></div>
+
+<div class="tw"><table>
+<tr><td><code>ParallaxAmount</code></td><td>depth in UV units. Small - 0.02 to 0.06. Past that the surface swims</td></tr>
+<tr><td><code>ParallaxSteps</code></td><td>raymarch steps, occlusion only</td></tr>
+</table></div>
+
+<p>Depth comes from the CRM red channel, the same cavity the layers blend against, tapped once at the unshifted coordinate before the offset is applied - so parallax costs one extra sample even in the cheap mode.</p>
+
+<div class="caution">
+Occlusion mode is the <b>only</b> thing in either master that spends a sampler slot. A raymarch cannot be expressed as graph taps, so its Custom node samples the height texture itself and brings its own sampler. Everything else here shares one. Budget for it, and do not put it on more than a hero surface.
+</div>
+
+<p>Leave <b>Parallax</b> off on the recipe and neither mode is in the master.</p>
+
+<div data-shot="surface.parallax"></div>
+
+<h2>Wetness</h2>
+
+<p><code>bWetness</code>. The amount comes from a Material Parameter Collection, so weather moves the whole world at once rather than per instance.</p>
+
+<div class="tw"><table>
+<tr><td><code>Wetness</code> (collection)</td><td>the global value. Drive it from gameplay</td></tr>
+<tr><td><code>Wetness_LocalAmount</code></td><td>per instance, multiplies the global. 0 opts an interior out</td></tr>
+<tr><td>vertex paint B</td><td>adds on top, for a mesh that holds water somewhere specific</td></tr>
+</table></div>
+
+<p>Water reaches crevices before high points, because porosity comes from cavity (<code>PorosityAmount</code>). On top of that: <code>Darkening</code>, <code>RoughnessTarget</code>, <code>NormalFlatten</code>, <code>SpecularTarget</code>.</p>
+
+<p>Standing water is a harder threshold than the damp darkening around it: <code>PuddleDepth</code>, <code>PuddleRoughness</code>, and <code>PuddleFacing</code>, which gates puddles to up-facing surfaces so water does not cling to a wall.</p>
+
+<h2>Accumulation</h2>
+
+<p><code>bAccumulation</code>. A covering that settles by which way a surface faces - snow on a ledge, dust on a shelf, ash on a sill.</p>
+
+<div class="tw"><table>
+<tr><td><code>Accumulation_Amount</code></td><td>how much has fallen. The one to drive</td></tr>
+<tr><td><code>Accumulation_Colour</code>, <code>Accumulation_CoverRoughness</code></td><td>what it is</td></tr>
+<tr><td><code>Accumulation_Facing</code></td><td>how up-facing a surface must be to hold it. This is what makes it snow rather than paint</td></tr>
+<tr><td><code>Accumulation_CavityBias</code></td><td>how much it favours crevices, which is where a thin covering starts and the last of it survives</td></tr>
+<tr><td><code>Accumulation_NoiseAmount</code></td><td>breaks the line between covered and bare so it does not read as a threshold</td></tr>
+</table></div>
+
+<p>No extra samples: it reuses the cavity the layers already blended and the surface normal the material already has. Snow, dust and ash are the same system with different numbers - see <a href="weather.html">Weather</a> for values.</p>
+
+<p>It runs <b>after</b> wetness, so a covering sits on top of a wet surface rather than being darkened by it. That is the right order: snow that has just landed is not wet yet.</p>
+
+<h2>Trample</h2>
+
+<p><code>bTrample</code>. Where the surface has been walked through: darker, its roughness moved, tilted into the print, and with the accumulation taken back off it.</p>
+
+<p>Everything else here is a function of the surface, so it can be worked out per pixel. Trample is a record of what happened, so <code>AMobTrampleVolume</code> keeps that record in a render target projected straight down and the material reads it back.</p>
+
+<div class="tw"><table>
+<tr><td><code>TrampleMask</code></td><td>the render target. Must be the same asset the volume draws into</td></tr>
+<tr><td><code>Trample_Depth</code></td><td>scales what the target holds into how far the surface tilts</td></tr>
+<tr><td><code>Trample_Darkening</code></td><td>base colour multiplier where the surface is fully broken</td></tr>
+<tr><td><code>Trample_RoughnessTarget</code></td><td>wet mud is smoother, broken snow is rougher. Both live here</td></tr>
+<tr><td><code>Trample_NormalStrength</code></td><td>how far the trench tilts the surface</td></tr>
+<tr><td><code>Accumulation_TrampleErase</code></td><td>how completely a print clears the covering</td></tr>
+</table></div>
+
+<p>Three taps, and the one thing here besides parallax occlusion that spends a sampler - the mask is clamped rather than wrapped, so it lands in the clamp group. Everything clamped then shares that one.</p>
+
+<p>It runs <b>after</b> accumulation, deliberately. A print through snow has to be a dent in the snow, and a covering laid over it afterwards would flatten the dent straight back out.</p>
+
+<p>Placing a volume, what writes it, and what it cannot do are in <a href="weather.html#trample">Weather</a>.</p>
+
+<h2>Colour variation</h2>
+
+<p>Two independent sources, <code>bColorVariation</code> and <code>bMacroVariation</code>.</p>
+
+<p><b>Per object</b> hashes <code>ObjectPositionWS</code>, so every copy of a mesh differs with no per-actor setup. <code>Variation_HueRange</code>, <code>Variation_SaturationRange</code>, <code>Variation_ValueRange</code>. This is the one for crates, barrels, roof tiles.</p>
+
+<p><b>Macro</b> is low-frequency world-space noise, and it is the only mode that varies <i>across</i> a single mesh, which is what a long wall or a building needs. <code>Variation_NoiseScale</code>, <code>MacroTintA</code>/<code>B</code>, <code>Variation_MacroTintAmount</code>, <code>Variation_MacroValueAmount</code>.</p>
+
+<p>Per layer there is also <code>HueShift</code>, <code>Saturation</code>, <code>Value</code>, <code>Contrast</code> and <code>Tint</code>, so one texture set can serve several materials without costing more memory.</p>
+
+<h2>Per-instance data</h2>
+
+<p><code>bPrimitiveData</code>. Reads tint, a roughness offset and a wetness offset from <b>custom primitive data</b> on the component.</p>
+
+<p>This is the cheapest per-instance variation there is: no new material instance, no new shader permutation, and it can be set from Blueprint at runtime. It is also the one that scales - a thousand actors sharing one instance still draw as one material.</p>
+
+<p>Colour variation by position hash and this are not the same tool. The hash gives every copy <i>a</i> different tint; primitive data gives a copy <i>the</i> tint somebody chose.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Index</th><th></th></tr></thead>
+<tbody>
+<tr><td>0, 1, 2, 3</td><td><code>PrimitiveTint</code>, multiplied over whatever the layers and the variation decided. A vector takes four</td></tr>
+<tr><td>4</td><td><code>PrimitiveRoughness</code>, added</td></tr>
+<tr><td>5</td><td><code>PrimitiveWetness</code>, added, before the global weather value scales it</td></tr>
+</tbody>
+</table></div>
+
+<p>Indices are fixed rather than exposed, because they are a contract with whatever sets them: change them here and every Blueprint calling <code>SetCustomPrimitiveDataFloat</code> silently means something else.</p>
+
+<p>Custom primitive data is a flag on a parameter rather than a node of its own, which is worth knowing: the parameter keeps its default when nothing sets the data, so an actor that was never told anything looks the way the instance says it should rather than black.</p>
+
+<p>On the component, set <b>Num Custom Data Floats</b> to at least <b>6</b>. The indices are a fixed contract, asserted by <b>Verify Contract</b>: <code>PrimitiveTint</code> is a vector at <b>0-3</b>, <code>PrimitiveRoughness</code> is <b>4</b>, <code>PrimitiveWetness</code> is <b>5</b>.</p>
+
+<div data-shot="surface.primitive-data"></div>
+
+<h2>Cavity</h2>
+
+<p>Cavity is micro shadowing. It multiplies BaseColor and modulates Specular, and it never reaches the AO pin, which stays at 1.</p>
+
+<p><code>CavityColorAmount</code>, <code>CavitySpecularAmount</code>, per-layer <code>CavityContrast</code>.</p>
+
+<h2>Emissive</h2>
+
+<p><code>bEmissive</code>. A mask texture times <code>EmissiveColor</code> times <code>EmissiveIntensity</code>. Off, the mask is never sampled and the pin is never written.</p>
+
+<h2>Detail</h2>
+
+<p><code>bDetail</code>. A second, much finer normal laid over whatever the layers blended to, faded out with distance.</p>
+
+<p>This is most of what separates a base layer from a finished surface at arm's length, and it is one texture sample for the whole material rather than one per layer - a detail normal is the same high-frequency break whichever layer it lands on.</p>
+
+<div class="tw"><table>
+<tr><td><code>DetailNormal</code></td><td>the texture. Tiles far tighter than the layers do</td></tr>
+<tr><td><code>DetailScale</code></td><td>multiplies the mesh UV. 8 is a reasonable start</td></tr>
+<tr><td><code>DetailStrength</code></td><td>how much slope it contributes</td></tr>
+</table></div>
+
+<p>It fades on the same curve as the distance clamp, and for the same reason: kept at range it is exactly the sub-pixel noise the clamp exists to remove.</p>
+
+<p>Leave <b>Detail Maps</b> off on the recipe and none of this is in the master at all - no parameters, no sample, no switch.</p>
+
+<h2>Distance</h2>
+
+<p>Always on, no switch. Normal detail and specular highlights finer than a pixel have nothing to resolve them without a temporal filter, and read as a crawling sparkle under FXAA. Taking them out in the material is the only place that can be fixed.</p>
+
+<p><code>FadeStart</code>, <code>FadeLength</code>, <code>DistanceNormalFlatten</code>, <code>DistanceRoughnessFloor</code>.</p>
+
+<h2>Blend modes</h2>
+
+<p>Opaque and one-sided by default. Masked and two-sided are per-instance <b>base property overrides</b>, not static switches, so the common path pays nothing for them.</p>
+
+<p>The opacity mask is read from <b>alpha</b>, which skips the sRGB decode, so the threshold authored in the mask is the threshold the clip uses. A masked prop can point it straight at its own BaseColor.</p>
+
+<div class="caution">
+Masked geometry costs real overdraw wherever the project runs without a depth prepass. Stay opaque unless the silhouette needs it.
+</div>
+
+<h2>Debug views</h2>
+
+<p><code>bDebug</code>, then <code>DebugMode</code>, which is a named list on the instance rather than an index:</p>
+
+<div class="tw"><table>
+<tr><td>Layer Weights</td><td>one per channel. Red is layer 0, green layer 1, blue layer 2</td></tr>
+<tr><td>Cavity</td><td>blended cavity, which is also what height blending reads</td></tr>
+<tr><td>Normal</td><td>blended normal, in tangent space, as a normal map reads</td></tr>
+<tr><td>Wetness</td><td>where the surface counts as wet</td></tr>
+<tr><td>Height</td><td>blended height. Flat grey here means nothing to blend along</td></tr>
+<tr><td>Vertex Colour</td><td>as painted</td></tr>
+<tr><td>Trample</td><td>where the surface has been walked through. Black everywhere no volume covers</td></tr>
+<tr><td>Accumulation</td><td>where snow, dust or ash has settled</td></tr>
+<tr><td>Transmission</td><td>how much light the surface lets through. Foliage only; black on every other master</td></tr>
+</table></div>
+
+<p><code>DebugExposure</code> scales the view before it is drawn. Several of these sit near white on their own - a height that never leaves the top of its range, a weight parked at one - and turning it down is what brings the variation in them back into a range the eye can read.</p>
+
+<p>The result goes to <b>emissive</b> with base colour blacked out, so what you see is the value itself rather than the value times whatever the light was doing.</p>
+
+<p>Layer weights are the one worth reaching for. A wrong weight is invisible in the final image precisely when it matters, because it looks like a texture choice rather than a mistake - and the weights are the one thing no other view can reconstruct, which is why the blend hands them out.</p>
+
+<div data-shot="surface.debug-views"></div>
+
+<h2>Foliage</h2>
+
+<p>A foliage master is a different master: two-sidedness, the shading model and the blend mode are material properties rather than parameters, so it cannot be a switch on this one. Blue in the layer pack becomes transmission instead of metallic, and wind and rustle appear on world position offset. It has a page of its own: <a href="foliage.html">Foliage</a>.</p>
+
+<h2>Cost</h2>
+
+<p>Feature gating is done with static bools on the material function inputs, not switches in the master. A material function input that no live branch reads is never compiled, so switching a layer off takes its texture samples and its grade with it rather than multiplying them by zero.</p>
+
+<p>Measured numbers, per feature, are on <a href="performance.html">Cost</a>.</p>
+
+<p><b>Samplers stay at 4 for every layer permutation.</b> Every layer sample is Shared:Wrap, so they collapse onto one sampler state and the 16-sampler limit never binds no matter how many layers are on. Trample is the exception, and only ever costs one: its mask is clamped rather than wrapped, so it opens the clamp group, and everything clamped shares that.</p>
+
+<div class="note">
+The Material Editor's sampler stat over-reports. It counted 12 for the triplanar case above, where the shader really contains 9: the stat also counts the three <code>Texture2DSample</code> overload declarations and the engine's own BRDF lookup. Dump the shader and count <code>Texture2DSample(Material_</code> if the number matters.
+</div>
+
+<p>Every distinct set of static switches is a distinct shader map, and PSOs are per vertex factory times material. Parent asset instances to a small fixed set of presets rather than letting every asset flip its own switches, or the PSO count grows with the art.</p>
+
+</main>
+</body>
+</html>

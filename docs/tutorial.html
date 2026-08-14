@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Everything, fast &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Everything, fast</h1>
+
+<p class="lede">The whole feature set in the order that needs the least backtracking. Picks up where <a href="install.html">Install</a> leaves off: the plugin is on, you have a recipe, and an instance is on a mesh.</p>
+
+<h2>Read this first</h2>
+
+<p><b>A feature you do not turn on does not exist.</b> Gating is done with static bools on material function inputs, and an input no live branch reads is never compiled - so a disabled layer takes its texture samples with it.</p>
+
+<p><b>Recipe options and instance switches are different things.</b> The recipe decides what is <i>in</i> the master; the switch decides whether an <i>instance</i> uses it.</p>
+
+<p><b>Presets exist to keep the permutation count down.</b> Every distinct combination of static switches is another shader map, multiplied by every mesh type that wears it. Parent to the preset closest to what you want rather than turning switches on from the base master, and reuse presets across assets.</p>
+
+<div class="tip">
+Regenerating is idempotent - assets are emptied and rebuilt in place, so instances keep their references and their values. Changing your mind about a recipe option is always safe. It is just slow.
+</div>
+
+<h2>The fast path</h2>
+
+<p>If you only read one section, read this one. Each step is expanded below.</p>
+
+<ol>
+
+<li><b>Recipe</b> - turn on every option you might want. Detail, tiling break, primitive data, accumulation, ripples, debug views. Leave parallax off unless you know you want it. Generate.</li>
+
+<li><b>One surface</b> - child of <code>MI_&lt;Name&gt;_Prop</code>, set <code>Layer0_BC</code> / <code>_NRM</code> / <code>_CRM</code>. Look at it.</li>
+
+<li><b>Second layer</b> - <code>bLayer1</code> on, set its three textures, <code>BlendHeightAmount</code> to 0.5. Paint vertex red.</li>
+
+<li><b>Tiling break</b> - <code>Layer0_TileBreak</code> on. Walk backwards. The grid should dissolve.</li>
+
+<li><b>Detail</b> - <code>bDetail</code> on, a fine normal, <code>DetailScale</code> around 8.</li>
+
+<li><b>Variation</b> - <code>bColorVariation</code> on for a set of props, or primitive data for per-instance tint.</li>
+
+<li><b>Weather</b> - <code>bWetness</code> on, drag <code>Wetness</code> on the collection 0 to 1. Then <code>bRipples</code>, then <code>bAccumulation</code>.</li>
+
+<li><b>Foliage</b> - second recipe, same output path, <code>bFoliage</code> on, different asset name. Generate.</li>
+
+<li><b>Terrain</b> - landscape recipe, layers named, generate, assign, paint.</li>
+
+<li><b>Verify and Report</b> from the Mat menu. Read the numbers.</li>
+
+</ol>
+
+<h2>1. Decide the recipe</h2>
+
+<p>The one step worth slowing down for, because changing it later means regenerating.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Recipe option</th><th>Turn it on if</th><th>Cost when an instance says no</th></tr></thead>
+<tbody>
+<tr><td><b>Detail Maps</b></td><td>anything is seen closer than a couple of metres</td><td>nothing</td></tr>
+<tr><td><b>Distance Tiling Break</b></td><td>anything tiles across a large surface</td><td>nothing</td></tr>
+<tr><td><b>Primitive Data</b></td><td>you want per-instance tint without new material instances</td><td>nothing</td></tr>
+<tr><td><b>Debug Views</b></td><td>always</td><td>nothing</td></tr>
+<tr><td><b>Accumulation</b></td><td>there is ever snow, dust or ash</td><td>nothing</td></tr>
+<tr><td><b>Rain Ripples</b></td><td>it ever rains</td><td>nothing</td></tr>
+<tr><td><b>Parallax</b></td><td>one hero surface needs fake depth</td><td>nothing, but see below</td></tr>
+<tr><td><b>Foliage</b></td><td>this recipe is <i>for</i> foliage</td><td>it is a different master</td></tr>
+</tbody>
+</table></div>
+
+<p>Everything in that list is free until an instance asks, so the honest default is to turn them all on except parallax and foliage.</p>
+
+<p>Parallax is the exception worth thinking about: the cheap offset mode is fine, but occlusion mode is the only thing in either master that spends a sampler slot, because a raymarch cannot be expressed as graph taps and its Custom node brings its own sampler. Turn the option on if you want it available; just do not put occlusion on more than a hero surface.</p>
+
+<p>Foliage is not an option so much as a fork - shading model, two-sidedness and blend mode are material properties rather than parameters, so a foliage master cannot be a switch on a standard one. Point a second recipe at the same output path with a different asset name.</p>
+
+<div data-shot="tutorial.presets"></div>
+
+<h2>Art you have to supply</h2>
+
+<p>Every texture parameter defaults to a 4x4 neutral from the plugin, so nothing is ever unassigned and no base material drags art into memory. Four of those neutrals are placeholders rather than defaults you would ship - the feature compiles and costs what it costs, but a flat texture makes it look like nothing is happening.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Parameter</th><th>Default</th><th>What it wants</th><th>Symptom if left</th></tr></thead>
+<tbody>
+<tr><td><code>MacroNoiseTexture</code></td><td><code>T_BaseLinear</code></td><td>a large, soft greyscale noise, tiled very low</td><td>macro variation does nothing - the noise is a constant</td></tr>
+<tr><td><code>RippleNormal</code></td><td><code>T_BaseNormal</code></td><td>any tiling normal; a real ripple texture beats generic noise</td><td>ripples cost their two samples and the puddle stays glassy</td></tr>
+<tr><td><code>DetailNormal</code></td><td><code>T_BaseNormal</code></td><td>a fine, high-frequency normal</td><td>detail costs its sample and adds no detail</td></tr>
+<tr><td><code>EmissiveMask</code></td><td><code>T_BaseBlack</code></td><td>white where it should glow</td><td>emissive is on and nothing glows - black masks everything</td></tr>
+</tbody>
+</table></div>
+
+<div class="important">
+These are the ones to check first when a feature "does not work". The switch is on, the cost is real, and the input is flat - which reads exactly like a broken feature.
+</div>
+
+<p>The plugin ships no noise texture of its own on purpose: a noise map is art, and one that suits a stylised project ruins a realistic one. Any tiling greyscale noise works, and the engine already carries two worth starting from:</p>
+
+<div class="tw"><table>
+<tr><td><code>/Engine/EngineMaterials/T_Default_MacroVariation</code></td><td>low frequency. What <code>MacroNoiseTexture</code> wants</td></tr>
+<tr><td><code>/Engine/EngineMaterials/Good64x64TilingNoiseHighFreq</code></td><td>high frequency. Usable as a stand-in for <code>DetailNormal</code> and <code>RippleNormal</code> until there is real art, though both would rather have a normal map than a greyscale</td></tr>
+</table></div>
+
+<h2>2. One good surface</h2>
+
+<p>Right-click <code>MI_&lt;Name&gt;_Prop</code> → <b>Create Material Instance</b>. That preset has everything off, three texture samples, and is the cheapest thing the master can be.</p>
+
+<p>Set <code>Layer0_BC</code>, <code>Layer0_NRM</code>, <code>Layer0_CRM</code>. Nothing else. Look at it on a mesh before adding anything.</p>
+
+<p><b>CRM is Cavity, Roughness, Metallic</b> - not AO. The game already has ambient occlusion; a texture AO on top double-darkens. Cavity does the job AO was doing and also serves as the height source for blending, so no separate height texture is needed. On a foliage master that last channel is transmission instead of metallic; see <a href="#6-foliage">6. Foliage</a>.</p>
+
+<p>Then the second layer:</p>
+
+<ol>
+
+<li><code>bLayer1</code> on.</li>
+
+<li><code>Layer1_BC</code> / <code>_NRM</code> / <code>_CRM</code>.</li>
+
+<li><code>BlendHeightAmount</code> to 0.5, <code>BlendContrast</code> around 0.5.</li>
+
+</ol>
+
+<p><code>BlendHeightAmount</code> at 0 is a plain cross-fade and at 1 is a pure height interlock, where the layers meet along their own detail - mortar filling before brick, gravel settling between cobbles. Somewhere in the middle usually reads best. <code>BlendContrast</code> is how wide a band that happens over; low is a hard crunchy edge.</p>
+
+<p>For projection, <code>LayerN_Triplanar</code> per layer. Off is one mesh-UV tap. On is world-aligned, three taps per texture, needs no UVs and survives non-uniform scale - the right answer for rocks, cliffs and anything kitbashed. Set <code>TriplanarScale</code> in world units per UV, <code>TriplanarSharpness</code> for how narrowly the three cross-fade.</p>
+
+<div class="tip">
+Triplanar and tiling break do not stack. The break is mesh-UV only on purpose: triplanar already samples three ways, and breaking it too would be nine taps to solve a repeat the projection has largely hidden.
+</div>
+
+<div data-shots="tutorial.first-surface, tutorial.second-layer"></div>
+
+<h2>3. Make it hold up</h2>
+
+<p>Three features that do nothing in a screenshot and everything in motion.</p>
+
+<p><b>Tiling break</b> - <code>LayerN_TileBreak</code>. A second tiling of the same texture at an incommensurate scale and rotation, faded in with distance. Near keeps the detail it was authored with; far dissolves the grid.</p>
+
+<p>Set <code>TileBreakScale</code> to something irrational-ish - 0.37, not 0.5. At 0.5 the two repeats line up and you have made a bigger grid. <code>TileBreakStart</code> and <code>TileBreakFalloff</code> say where it comes in.</p>
+
+<p>The two tilings combine as an overlay rather than a lerp, because a lerp of two scales halves the contrast and reads as blur - trading one artefact for another.</p>
+
+<p><b>Detail</b> - <code>bDetail</code>, then point <code>DetailNormal</code> at a fine tiling normal, <code>DetailScale</code> around 8, <code>DetailStrength</code> to taste. It defaults to a flat normal, so without that it costs a sample and shows nothing. One extra sample for the whole material, faded out with distance. This is most of what separates a base layer from a finished one up close.</p>
+
+<p><b>Parallax</b> - <code>LayerN_Parallax</code> for the cheap offset mode. <code>ParallaxAmount</code> small: 0.02 to 0.06. Past that the surface swims. Sells brick, cobbles and plank gaps at anything but a grazing angle. <code>LayerN_ParallaxOcclusion</code> raymarches instead, which is genuinely expensive and brings its own sampler.</p>
+
+<p>Neither mode changes the silhouette. At a grazing angle the edge is still flat - that is the honest limit of the trick, and why offset mode is usually enough.</p>
+
+<div data-shots="tutorial.tile-break, tutorial.detail"></div>
+
+<h2>4. Make it vary</h2>
+
+<p>Three ways to stop a hundred copies of a prop reading as a hundred copies of a prop, in ascending order of cost.</p>
+
+<p><b>Custom primitive data</b> is the cheapest per-instance variation there is: no new material instance, no new shader permutation, and it can be driven from Blueprint at runtime. Indices are a fixed contract - <b>0-3</b> tint, <b>4</b> roughness offset, <b>5</b> wetness offset, so <b>Num Custom Data Floats</b> is 6 and whatever sets them can rely on them.</p>
+
+<p><b>Colour variation</b> - <code>bColorVariation</code>. Hashes object position into an HSV shift, so each instance of the same mesh lands somewhere slightly different. <code>Variation_HueRange</code> / <code>Variation_SaturationRange</code> / <code>Variation_ValueRange</code> are how far it can drift. Keep hue tiny; value does most of the work.</p>
+
+<p><b>Vertex paint</b> is per-mesh rather than per-instance, and it is worth knowing the convention before you pick up the brush:</p>
+
+<div class="tw"><table>
+<thead><tr><th>Channel</th><th>White</th><th>Black</th></tr></thead>
+<tbody>
+<tr><td>R</td><td>layer 0</td><td>layer 1</td></tr>
+<tr><td>G</td><td>layer 0</td><td>layer 2</td></tr>
+<tr><td>B</td><td>dry</td><td>wet</td></tr>
+<tr><td>A</td><td>no darkening</td><td>darkened</td></tr>
+</tbody>
+</table></div>
+
+<p><b>Black adds, white is neutral.</b> You do not have to fill a mesh with black before painting - a mesh with no vertex colour buffer gets white from the vertex factory, and white is the unpainted base layer, dry and unshaded. The cost is that the brush is subtractive: you paint black to add a layer. The benefit is that any mesh reaching this material unpainted looks correct instead of arriving as the top layer, soaking wet.</p>
+
+<h2>5. Weather</h2>
+
+<p>The short version: <code>bWetness</code> on, then <b>Mob → Open MPC_MobWeather</b> and drag <code>Wetness</code> 0 to 1.</p>
+
+<p>Wetness is a state the world is in rather than a per-material look, which is why it lives in a parameter collection. Point several recipes at one collection and a whole project follows it. Per instance, <code>Wetness_LocalAmount</code> scales it, and <b>0 opts out entirely</b> - use it for interiors and anything sheltered.</p>
+
+<p>Start with only <code>RoughnessTarget</code> and <code>Darkening</code>. Wet is mostly a roughness change. If it does not read at <code>Wetness</code> 1 with those two alone, the problem is the lighting.</p>
+
+<p>Then <code>bRipples</code> for rain - set <code>RippleNormal</code> too, it defaults to flat - and <code>bAccumulation</code> for snow, dust or ash, which needs no art at all.</p>
+
+<div class="note">
+Weather has a tutorial of its own with the numbers for each: <a href="weather.html">Weather</a>.
+</div>
+
+<h2>6. Foliage</h2>
+
+<p>A second recipe pointed at the same output path, a different asset name, <b>Foliage</b> on. Generate. You get <code>M_MyFoliage</code> beside <code>M_MySurface</code>, sharing one copy of the material functions.</p>
+
+<p>It comes out masked, two-sided, two-sided-foliage shading, with a subsurface colour for light coming through a leaf. Set <code>Layer0_BC</code>, <code>Layer0_NRM</code>, <code>Layer0_CRT</code>, and point <code>OpacityMask</code> at the same texture as <code>Layer0_BC</code> - the clip reads its alpha.</p>
+
+<p>That colour on its own gives a thick stem as much glow as a thin leaf tip, which is what makes foliage read as fake. Tick <code>bTransmissionMap</code> and the blue channel becomes how thin the surface is, so tips glow and stems stay opaque. Blue is metallic on a standard master and a plant is never metal, so this costs no extra sample - which is why the slot here is <code>Layer0_CRT</code> where a surface master has <code>Layer0_CRM</code>.</p>
+
+<div class="warn">
+It is off by default for a reason. A pack repacked from an ORM has metallic <b>zero</b> in blue, so turning this on against one puts <i>no</i> light through the plant - the foliage goes flat and dark, which does not look like a missing map. Repack first: <b>Mob → Remap Texture Channels...</b>, target <b>CRT (foliage)</b>, blue pointed at a transmission map (or a thickness map with Invert ticked). No map, leave it off.
+</div>
+
+<p><code>TransmissionAmount</code> is the one knob over the whole plant; <code>Layer0_TransmissionScale</code> and friends do it per layer, for bark against leaf.</p>
+
+<p>For wind, <code>bWind</code>, then two scales of the same motion: <code>WindStrength</code> / <code>WindSpeed</code> is the trunk sway carrying the whole plant, and <code>WindFlutterStrength</code> / <code>WindFlutterSpeed</code> is the leaf flutter across the sway direction so the leaves do not all travel along one line. Movement is weighted by height above the object origin, so the base stays planted with no skeleton and no painted weight. Phase comes from world position, so two plants side by side never move together.</p>
+
+<p>Vertex colour red scales wind where painted; unpainted is white, which is already the tips-move-most case.</p>
+
+<div class="note">
+Wind is world position offset, so it runs per vertex. Foliage meshes want to be low enough poly that this is free.
+</div>
+
+<h2>7. Terrain</h2>
+
+<p>A landscape recipe's <b>Layers</b> list is the whole design: the first is the base, and it holds whatever weight the painted layers leave behind, so untouched ground has something to blend against.</p>
+
+<ol>
+
+<li>Name the layers. Generate.</li>
+
+<li>Assign <code>MI_&lt;Name&gt;</code> to the landscape.</li>
+
+<li>Landscape mode, <b>+</b> beside each target layer to create its layer info asset.</li>
+
+<li>Point each layer's <code>_BC</code> / <code>_NRM</code> / <code>_HRC</code> at your textures.</li>
+
+<li>Paint.</li>
+
+</ol>
+
+<p>Layer count is built into the graph, so it cannot be changed on an instance. Edit the recipe and generate again.</p>
+
+<p><b>HRC is Height, Roughness, Cavity</b> - the landscape's pack, same reasoning as CRM. Height leads because the blend is height-aware.</p>
+
+<p>Then the terrain-specific features:</p>
+
+<div class="tw"><table>
+<tr><td><code>&lt;Layer&gt;_HexTiling</code></td><td>stochastic hex tiling - three rotated samples per texture, weighted per cell, with variance restored so the blend does not wash the colour out. The strongest repeat killer here, and the most expensive</td></tr>
+<tr><td><code>&lt;Layer&gt;_DualScale</code></td><td>the cheap tier. One extra tiling overlaid. On by default</td></tr>
+<tr><td><code>SlopeRock_*</code></td><td>rock taking over past a slope angle, height-interlocked rather than cross-faded, broken up by noise</td></tr>
+<tr><td><code>Moss_*</code></td><td>moss placed by cavity, slope, sun-facing shade and noise rather than painted</td></tr>
+<tr><td><code>&lt;Layer&gt;_SlopeMin/Max/Amount</code></td><td>stop a layer from painting on cliffs</td></tr>
+<tr><td><code>&lt;Layer&gt;_AltitudeMin/Max/Amount</code></td><td>stop a layer below or above a height</td></tr>
+</table></div>
+
+<h3>Texture arrays</h3>
+
+<p>Past about four layers, consider <b>Texture Array Layers</b> on the recipe. Each layer's three textures become three slices, so the master samples three texture objects no matter how many layers there are - eight layers is three texture objects instead of twenty-four, and one slice index per layer instead of three texture parameters.</p>
+
+<ol>
+
+<li>Tick <b>Texture Array Layers</b> and set <b>Layer Texture Root</b> to the folder holding the art.</li>
+
+<li><b>Mob → Pack Layers for \&lt;Recipe\&gt;</b>. It matches each layer by name against a channel suffix - <code>_BC</code>, <code>_BaseColor</code>, <code>_basecolor</code> for colour, <code>_NRM</code>, <code>_Normal</code> for normals, <code>_HRC</code>, <code>_HeigRougAO</code> for the mask pack - searching recursively, so per-layer subfolders are fine.</li>
+
+<li>Read the log. It lists the slice order and names any layer it could not find a texture for.</li>
+
+<li>Generate.</li>
+
+</ol>
+
+<p>The cost is that a slice cannot differ from its neighbours: every layer's textures must share one resolution and one format per channel. That is what a texture array is, not a limitation of this plugin. Swapping one layer's art means a repack rather than a parameter change.</p>
+
+<div class="important">
+Pack before you generate. The master samples whatever is at each slice index and has no way to notice that a slice is not the art the layer wanted - a mismatch looks like the wrong texture on the wrong layer, not like an error. Moss takes the last slice, after the painted layers.
+</div>
+
+<h2>8. Tie it together</h2>
+
+<p><b>Build Project Outputs</b> on a landscape recipe adds the three things that connect terrain to the rest of the game. They reference assets a game owns rather than the plugin, which is why they are off by default - set the four paths beneath the tickbox before generating.</p>
+
+<div class="tw"><table>
+<tr><td><b>Runtime virtual texture</b></td><td>caches the blend so the terrain shades once per texel instead of per pixel, and gives meshes something to read</td></tr>
+<tr><td><b>Physical material output</b></td><td>footsteps follow the paint, and the wet mask feeds it too, so wet dirt reads as mud without anything wiring it up</td></tr>
+<tr><td><b>Grass output</b></td><td>grass placed by paint weight</td></tr>
+</table></div>
+
+<p>Generating also authors <code>MF_&lt;Name&gt;RVTBlend</code>, which fades a mesh into the terrain by reading the height RVT - the thing that stops a rock or a wall meeting the ground on a hard line. Put it on the surface material of anything that sits in the terrain.</p>
+
+<h2>Working with debug views</h2>
+
+<p>The single biggest time saver here, and it costs nothing until asked.</p>
+
+<p><code>bDebug</code> on the instance, then <code>DebugMode</code> - a named list, not an index to remember:</p>
+
+<div class="tw"><table>
+<tr><td>Layer Weights</td><td>red is layer 0, green layer 1, blue layer 2</td></tr>
+<tr><td>Cavity</td><td></td></tr>
+<tr><td>Normal</td><td>blended, in tangent space</td></tr>
+<tr><td>Wetness</td><td>the wetness mask</td></tr>
+<tr><td>Height</td><td>blended height</td></tr>
+<tr><td>Vertex Colour</td><td>as painted</td></tr>
+</table></div>
+
+<p>The result goes to emissive with base colour blacked out, so you see the value itself rather than the value times whatever the light was doing.</p>
+
+<p>If a view reads as flat white, turn <code>DebugExposure</code> down. Height and weights both spend most of their time at the top of their range, and the variation that matters is in the last fraction.</p>
+
+<p><b>Layer weights is the one to reach for.</b> A wrong weight is invisible in the final image precisely when it matters, because it looks like a texture choice rather than a mistake - and no other view can reconstruct it.</p>
+
+<p>Mode 4 is the one to check when weather is not behaving: ripples are gated by the puddle mask, so if there is no puddle there is nothing to ripple.</p>
+
+<p>The landscape master has the same views for weights, cavity, wetness and height.</p>
+
+<div data-shot="tutorial.debug"></div>
+
+<h2>Keeping the cost honest</h2>
+
+<p>Two things on the Mat menu, both of which answer questions that otherwise surface at cook time.</p>
+
+<p><b>Verify Contract</b> builds a scratch instance per feature and asserts what the documentation claims - taps and samplers per feature, that the ambient occlusion pin is left alone, that the custom primitive data indices have not moved. Run it after changing a recipe.</p>
+
+<p><b>Report Cost</b> counts distinct shader permutations across every master's instances, and estimates texture held resident per master. Permutation count is the one to watch: each is another shader map, multiplied by every vertex factory that wears it. If it is climbing, assets are flipping their own switches instead of parenting to presets.</p>
+
+<div class="warn">
+Do not trust the Material Editor's "Texture samplers" stat. It over-reports - it counts the sample function overload declarations and the engine's own lookups alongside yours. Dump the shader (<code>r.DumpShaderDebugInfo 1</code>) and count <code>Texture2DSample(Material_</code> if you need the real number.
+</div>
+
+<h2>Wrong turns</h2>
+
+<div class="tw"><table>
+<tr><td><b>Turned a switch on and nothing happened</b></td><td>the recipe option is off, so the feature is not in the master. Turn it on, regenerate</td></tr>
+<tr><td><b>Everything is soaking wet and the top layer</b></td><td>vertex colour convention. Black adds, white is neutral - an unpainted mesh should read as the base layer. If it does not, something has filled the mesh with black</td></tr>
+<tr><td><b>A feature is on and nothing changed</b></td><td>its texture is still the flat placeholder. See <a href="#art-you-have-to-supply">Art you have to supply</a></td></tr>
+<tr><td><b>Ripples do nothing</b></td><td>they are gated by the puddle mask. Check the <b>Wetness</b> debug view first: no puddle, no ripple. Raise <code>PuddleDepth</code> or check the surface is facing up</td></tr>
+<tr><td><b>Wetness reads as a darker texture</b></td><td><code>RoughnessTarget</code> is not low enough. Wet is mostly a roughness change</td></tr>
+<tr><td><b>Tiling break made it blurry</b></td><td><code>TileBreakScale</code> too close to a simple fraction, or <code>TileBreakAmount</code> too high. Try 0.37</td></tr>
+<tr><td><b>Parallax swims</b></td><td><code>ParallaxAmount</code> too high. 0.02 to 0.06</td></tr>
+<tr><td><b>The editor froze while generating</b></td><td>it is working. A landscape master rebuilds several hundred nodes and recompiles on the game thread, which can take minutes</td></tr>
+<tr><td><b>Wrong texture on a terrain layer after packing arrays</b></td><td>slice order is the recipe's layer order with moss last. Repack and read the log's slice list</td></tr>
+<tr><td><b>Permutation count is climbing</b></td><td>assets are setting their own switches. Parent them to presets instead</td></tr>
+</table></div>
+
+<div class="tw"><table>
+<thead><tr><th>Reference</th><th></th></tr></thead>
+<tbody>
+<tr><td><a href="surface.html">Surface</a></td><td>every surface parameter</td></tr>
+<tr><td><a href="landscape.html">Landscape</a></td><td>every landscape parameter</td></tr>
+<tr><td><a href="weather.html">Weather</a></td><td>rain, snow, dust</td></tr>
+</tbody>
+</table></div>
+
+</main>
+</body>
+</html>

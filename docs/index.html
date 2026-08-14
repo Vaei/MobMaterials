@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>MobMaterials</h1>
+<p class="lede">Landscape, surface and foliage master materials for Unreal's mobile forward renderer. Built for stylized and realistic projects alike.</p>
+
+<div data-shots="index.hero, index.tour"></div>
+
+<p><a class="cta" href="install.html">Install it &rarr;</a></p>
+
+<div class="caution">
+Not officially released. Expect bugs and updates without versioning. Documentation is still filling in.
+</div>
+
+<h2>What you get</h2>
+
+<div class="tw"><table>
+<tr><td><b>Landscape</b></td><td>Paint layers that interlock along their own height, stochastic hex tiling that kills repetition at any distance, slope rock and moss placed by the terrain itself, and the whole blend cached into a runtime virtual texture so a dozen layers cost what one does.</td></tr>
+<tr><td><b>Surface</b></td><td>Three layers, vertex paint, triplanar, parallax, detail normals, distance tiling break, per-instance variation and weather. Every feature gated by a static switch, so what you turn off is not compiled.</td></tr>
+<tr><td><b>Foliage</b></td><td>Masked, two-sided, light through the leaf per texel, two scales of wind, and grass that gets pushed aside by what runs through it.</td></tr>
+</table></div>
+
+<h2>Twenty minutes to a world</h2>
+
+<ol>
+<li><a href="install.html">Enable the plugin</a>, set four project settings, generate a master from a recipe.</li>
+<li>Put an instance on a mesh and set three textures.</li>
+<li>Generate a landscape master, paint it.</li>
+<li>Drag <code>Wetness</code> from 0 to 1 and watch the whole world respond.</li>
+</ol>
+
+<h2>Where to go</h2>
+
+<div class="doors">
+<a class="door" href="install.html"><b>Set it up</b><span>Plugin, project settings, your first master and the test level.</span></a>
+<a class="door" href="workflow.html"><b>Build a world</b><span>The order of operations that avoids backtracking, then the stylized and realistic forks.</span></a>
+<a class="door" href="techniques.html"><b>Learn the techniques</b><span>Triplanar, stochastic hex tiling, tiling break, parallax - when each one is the right answer and when it is not.</span></a>
+<a class="door" href="surface.html"><b>Look things up</b><span>Every parameter on every master, what it costs, and what a symptom means.</span></a>
+</div>
+
+<h2>Reading first</h2>
+
+<div class="tw"><table class="free">
+<tr><td><a href="https://blog.daftsoftware.com/unreal-perf-maxing/">Mobile Forward Rendering guide</a></td><td>why this path exists and how to get on it. Comes with a starter project</td></tr>
+<tr><td><a href="https://technology.riotgames.com/news/valorant-shaders-and-gameplay-clarity">Valorant shaders and gameplay clarity</a></td><td>what a shipped game does with it, and the TF2 techniques underneath</td></tr>
+<tr><td><a href="https://github.com/Vaei/GradientTool">Gradient Tool</a></td><td>realtime gradients, which those techniques need and UE's Color Ramp cannot give you</td></tr>
+<tr><td><a href="https://github.com/Vaei/ForwardRender">Forward Render Helper</a></td><td>puts your light vector on the MPC. Replaces the hotpatch module in the guide above</td></tr>
+</table></div>
+
+<div class="note">
+Mobile forward has real lighting limits, and it suits far more than Valorant and TF2 clones. Games on it can look crisp and beautiful at four-figure frame rates in a packaged build.
+</div>
+
+</main>
+</body>
+</html>

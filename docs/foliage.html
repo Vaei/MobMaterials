@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Foliage &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Foliage</h1>
+<p class="lede">A separate master, because two-sidedness, the shading model and the blend mode are material properties rather than parameters. Point a second recipe at the same output path with a different asset name and <code>bFoliage</code> on.</p>
+
+<h2>The pack</h2>
+
+<div class="tw"><table>
+<thead><tr><th>Parameter</th><th>Content</th><th>Compression</th></tr></thead>
+<tbody>
+<tr><td><code>Layer0_BC</code></td><td>albedo</td><td>Default, sRGB</td></tr>
+<tr><td><code>Layer0_NRM</code></td><td>tangent normal</td><td>Normalmap</td></tr>
+<tr><td><code>Layer0_CRT</code></td><td>R cavity, G roughness, <b>B transmission</b></td><td>Masks, sRGB off</td></tr>
+<tr><td><code>OpacityMask</code></td><td>read from <b>alpha only</b> - point it at <code>Layer0_BC</code></td><td>Default, sRGB</td></tr>
+</tbody>
+</table></div>
+
+<p>Blue is the only channel whose meaning depends on the master. A surface master reads it as metallic; a plant is never metal, and that sample is paid for either way, so a foliage master reads it as thickness. There is no thickness map and no subsurface map: thickness is that channel, and the colour of the light coming through is <code>SubsurfaceColor</code>, one parameter for the whole plant, shaped per texel by the mask.</p>
+
+<div class="warn">
+<code>OpacityMask</code> is read from <b>alpha</b>, not a colour channel. A greyscale mask in RGB samples as 1 in alpha and clips nothing, or as 0 if the texture has no alpha at all, and clips everything.
+</div>
+
+<div class="note">
+The mask is its own tap, not a swizzle of the base colour one, so a foliage master samples four textures where a one-layer surface master samples three. Pointing it at the same texture as <code>Layer0_BC</code> is the normal thing to do and does not make it free.
+</div>
+
+<div data-shot="foliage.mask"></div>
+
+<h2>Transmission</h2>
+
+<p>Light through a leaf, per texel, from the channel a plant has no use for as metallic. This is the single biggest thing separating foliage that reads as a plant from foliage that reads as cardboard.</p>
+
+<div class="tw"><table>
+<tr><td><code>bTransmissionMap</code></td><td>use the CRT blue channel. Off by default</td></tr>
+<tr><td><code>SubsurfaceColor</code></td><td>the colour of the light coming through. Default <code>0.15, 0.35, 0.08</code></td></tr>
+<tr><td><code>TransmissionAmount</code></td><td>global scale, default <code>1</code></td></tr>
+<tr><td><code>LayerN_TransmissionScale</code></td><td>per layer, which is what makes bark and leaf on one mesh work</td></tr>
+</table></div>
+
+<div class="important">
+If foliage goes flat and dark the moment <code>bTransmissionMap</code> is ticked, the pack in <code>Layer0_CRT</code> has metallic in blue rather than transmission, and metallic on a plant is 0 - so no light gets through. Repack it: <b>Mat &rarr; Remap Texture Channels&hellip;</b>, target <b>CRT</b>.
+</div>
+
+<div data-shot="foliage.transmission"></div>
+
+<h2>Layers</h2>
+
+<p>Most foliage uses layer 0 alone. Layers 1 and 2 are for bark against leaf on one mesh, which is where per-layer <code>TransmissionScale</code> earns its place: the leaf lets light through, the stem does not.</p>
+
+<div data-shot="foliage.layers"></div>
+
+<h2>Wind</h2>
+
+<p>Two scales of motion on world position offset, weighted by height above the object pivot so the base stays planted and the tips move. Vertex red scales the whole thing, so a mesh can say which parts are allowed to bend.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Parameter</th><th>Default</th><th></th></tr></thead>
+<tbody>
+<tr><td><code>bWind</code></td><td>-</td><td>the switch</td></tr>
+<tr><td><code>WindDirection</code></td><td><code>1, 0, 0</code></td><td>world space. One direction for the whole scene</td></tr>
+<tr><td><code>WindStrength</code></td><td><code>6</code></td><td>the slow, large sway</td></tr>
+<tr><td><code>WindSpeed</code></td><td><code>1.2</code></td><td></td></tr>
+<tr><td><code>WindFlutterStrength</code></td><td><code>2.5</code></td><td>the fast, small motion at the tips</td></tr>
+<tr><td><code>WindFlutterSpeed</code></td><td><code>5</code></td><td></td></tr>
+</tbody>
+</table></div>
+
+<div data-shot="foliage.wind"></div>
+
+<h2>Rustle</h2>
+
+<p>Foliage pushed aside by what moves through it. A disturber is a <b>sphere in world space</b>, not a footprint on the ground, because a canopy is four metres up and a top-down field cannot tell walking under a tree from walking through it. Every plant inside the sphere leans away and rings; a plant a metre outside does not know it exists.</p>
+
+<h3>On the material</h3>
+
+<div class="tw"><table>
+<thead><tr><th>Parameter</th><th>Default</th><th></th></tr></thead>
+<tbody>
+<tr><td><code>bRustle</code></td><td>-</td><td>the switch. Adds to the same WPO pin as wind</td></tr>
+<tr><td><code>RustleBend</code></td><td><code>18</code></td><td>how far a plant leans out of the way</td></tr>
+<tr><td><code>RustleWobble</code></td><td><code>7</code></td><td>how far it overshoots on the way back</td></tr>
+<tr><td><code>RustleFrequency</code></td><td><code>7</code></td><td>how fast it rings</td></tr>
+<tr><td><code>RustleDamping</code></td><td><code>0.8</code></td><td>how quickly the ring dies</td></tr>
+<tr><td><code>RustleMaskFalloff</code></td><td><code>1</code></td><td>how sharply the sphere's edge falls off</td></tr>
+</tbody>
+</table></div>
+
+<h3>Setting one up</h3>
+
+<ol>
+<li>Turn on <b>Rustle</b> on the foliage recipe and set its <b>Rustle Collection</b>. Generate.</li>
+<li>Point <b>Project Settings &rarr; Plugins &rarr; Mob Rustle &rarr; Parameter Collection</b> at that same collection.</li>
+<li>Add a <b>Mob Rustle Disturbance</b> component to anything that should part the grass.</li>
+</ol>
+
+<div class="tw"><table>
+<thead><tr><th>On the component</th><th>Default</th><th></th></tr></thead>
+<tbody>
+<tr><td><code>Radius</code></td><td><code>170</code> cm</td><td>wider than the body. A sphere sized to a capsule only grazes the lowest leaves, which reads as nothing happening</td></tr>
+<tr><td><code>RestStrength</code></td><td><code>0.2</code></td><td>how hard something barely moving pushes</td></tr>
+<tr><td><code>MoveStrength</code></td><td><code>1</code></td><td>what a sprint through a bush looks like</td></tr>
+<tr><td><code>ReferenceSpeed</code></td><td><code>500</code> cm/s</td><td>the speed at which the push has reached <code>MoveStrength</code></td></tr>
+<tr><td><code>bEnabled</code></td><td>on</td><td>turns it off without unregistering</td></tr>
+</tbody>
+</table></div>
+
+<p>For a one-off - an arrow, a landing, an explosion - call <code>AddRustleImpulse</code> on <code>UMobRustleSubsystem</code> with a location, a radius and a push vector. No component needed.</p>
+
+<div class="important">
+There are <b>four slots</b>. The disturbers nearest the camera win. That is the right answer for a duel and the wrong one for a crowd, so do not put a disturber on every AI in a battle.
+</div>
+
+<div class="tw"><table>
+<thead><tr><th>Project setting</th><th>Default</th><th></th></tr></thead>
+<tbody>
+<tr><td><code>ImpulseLifetime</code></td><td><code>2</code> s</td><td>how long a one-shot holds its slot. A slot released early is a plant that snaps straight rather than settling</td></tr>
+<tr><td><code>ReleaseLifetime</code></td><td><code>2</code> s</td><td>how long a slot goes on being written after its disturber has gone. What leaves a bush has to leave it moving</td></tr>
+<tr><td><code>SettleSpeed</code></td><td><code>20</code> cm/s</td><td>below this a disturber counts as standing still, so grass held aside by somebody standing in it closes over them rather than staying parted</td></tr>
+</tbody>
+</table></div>
+
+<div data-shot="foliage.rustle"></div>
+
+<h2>Cost</h2>
+
+<div class="tw"><table>
+<tr><td>Texture taps</td><td>4 for one layer - three plus the mask</td></tr>
+<tr><td>Samplers</td><td>4, as everywhere. Every tap goes through the shared wrap group</td></tr>
+<tr><td>Overdraw</td><td>real. With <code>r.EarlyZPass=0</code> there is no depth prepass, so masked geometry pays for every layer it draws through. This is the cost that actually matters for foliage</td></tr>
+<tr><td>Wind and rustle</td><td>vertex work, not pixel work. Both write the same WPO pin</td></tr>
+</table></div>
+
+<div class="tip">
+The cheapest thing you can do for foliage performance is not in this material. Fewer, larger cards with tighter silhouettes beat more, smaller ones every time on a renderer with no depth prepass.
+</div>
+
+<h2>Checklist</h2>
+
+<ul>
+<li>The foliage master is a separate recipe, not a switch on the surface one.</li>
+<li><code>OpacityMask</code> points at a texture that actually has alpha.</li>
+<li><code>Layer0_CRT</code> blue is transmission, not metallic, and the shape reads against the sun.</li>
+<li>Wind direction matches whatever the sky and the rest of the scene say it is.</li>
+<li>Rustle disturbers exist on the player and a handful of others, not on everything.</li>
+<li>Cards were reduced before the shader was blamed.</li>
+</ul>
+
+</main>
+</body>
+</html>

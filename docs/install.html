@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Install &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Install</h1>
+<p class="lede">Plugin, four project settings, one generated master. UE 5.8+.</p>
+
+<h2>Project settings</h2>
+
+<p>These masters are built for the mobile forward path. <code>Config/DefaultEngine.ini</code>, under <code>[/Script/Engine.RendererSettings]</code>.</p>
+
+<h3>Required</h3>
+
+<div class="tw"><table>
+<tr><td><code>r.Substrate=false</code></td><td>legacy material graphs. Substrate is a different material system and they will not compile against it</td></tr>
+<tr><td><code>r.Mobile.ShadingPath=0</code></td><td>mobile <b>forward</b>. The deferred mobile path has a GBuffer and different rules</td></tr>
+<tr><td><code>r.MobileHDR=True</code></td><td>off, there is no tonemapper and no post processing to speak of</td></tr>
+<tr><td><code>+D3D11TargetedShaderFormats=PCD3D_ES31</code></td><td>so an ES3.1 shader map is actually cooked. Windows targets, alongside SM5</td></tr>
+</table></div>
+
+<div class="warn">
+Nothing here is checked at runtime. Get it wrong and the symptom is a material that compiles on desktop and behaves differently, or not at all, once the preview platform is ES3.1.
+</div>
+
+<h3>Strongly recommended</h3>
+
+<p>The design assumes these. It still works without them, but decisions in the material stop paying for themselves.</p>
+
+<div class="tw"><table>
+<tr><td><code>r.ForwardShading=True</code></td><td>the desktop half of the same lighting model, so a desktop build looks like the mobile one</td></tr>
+<tr><td><code>r.AllowStaticLighting=False</code></td><td>fully dynamic. The masters have no lightmap path and the AO pin is deliberately unused</td></tr>
+<tr><td><code>r.Nanite=0</code>, <code>r.Shadow.Virtual.Enable=0</code></td><td>neither survives the mobile path, and both cost memory being enabled</td></tr>
+<tr><td><code>r.VirtualTextures=True</code></td><td>required for the landscape's RVT output and for blending meshes into the terrain. Turn it off and use <code>bUseRVT</code> off</td></tr>
+</table></div>
+
+<h3>Worth knowing</h3>
+
+<div class="tw"><table>
+<tr><td><code>r.AntiAliasingMethod=1</code></td><td>FXAA. Why the distance clamp exists: with no temporal filter, sub-pixel normal and specular detail crawls, and the material is the only place it can be removed. On TAA instead, turn <code>DistanceNormalFlatten</code> and <code>DistanceRoughnessFloor</code> down</td></tr>
+<tr><td><code>r.EarlyZPass=0</code></td><td>no depth prepass, so masked geometry costs real overdraw. Stay opaque unless the silhouette needs it</td></tr>
+<tr><td><code>r.DBuffer=False</code></td><td>no DBuffer decals. Nothing here reads a decal buffer, so this is free to leave off</td></tr>
+<tr><td><code>r.TextureStreaming=False</code></td><td>every texture resident at mip 0. This is why every texture parameter defaults to a 4x4 neutral: an unused slot then costs nothing</td></tr>
+<tr><td><code>r.Mobile.Forward.EnableLocalLights=0</code></td><td>only the directional light, skylight and reflection captures light these materials. See <a href="https://github.com/Vaei/MobLights">MobLights</a> for local lights that cost nothing when off screen</td></tr>
+</table></div>
+
+<div class="important">
+The editor previews SM5 or SM6 until something switches it. Set the preview platform to <b>Android ES3.1</b> or <b>PC D3D Mobile</b> before trusting anything the Material Editor's stats tell you. SM6 will happily compile things that silently vanish at ES3.1.
+</div>
+
+<div data-shot="install.preview"></div>
+
+<h2>Generate a master</h2>
+
+<p>Nothing is authored by hand. A <b>recipe</b> is an asset saying what to build and where, so a project carries as many masters as it needs - a landscape per biome, a surface master per art style - each regenerated on its own click. You never touch a base material.</p>
+
+<ol>
+<li>Enable the plugin. It enables <b>Python Editor Script Plugin</b>, which generation needs.</li>
+<li><b>Mat &rarr; Generate Materials&hellip;</b> on the level editor toolbar.</li>
+<li>Make a recipe: Content Browser &rarr; Miscellaneous &rarr; Data Asset &rarr; <b>Mob Material Recipe</b>.</li>
+<li>Set <b>Kind</b>, <b>Output Path</b> and <b>Asset Name</b>. Turn on every option except parallax and foliage - <a href="tutorial.html#1-decide-the-recipe">they are free until an instance asks</a>.</li>
+<li><b>Generate</b>.</li>
+</ol>
+
+<div data-shots="install.recipe, install.generate"></div>
+
+<div class="warn">
+The editor locks up while a master is generated. It runs on the game thread: a surface master takes a few seconds, a landscape with a dozen layers rebuilds several hundred nodes and recompiles, which can take minutes with an unresponsive UI. It is working, not hung.
+</div>
+
+<p>Regenerating is idempotent. Existing assets are emptied and rebuilt in place, so instances keep their references and their parameter values, and re-running is always safe.</p>
+
+<h2>First surface</h2>
+
+<p>A surface recipe writes <code>M_&lt;AssetName&gt;</code> and four preset instances.</p>
+
+<ol>
+<li>Right-click <code>MI_&lt;AssetName&gt;_Prop</code> &rarr; <b>Create Material Instance</b>.</li>
+<li>Set <code>Layer0_BC</code>, <code>Layer0_NRM</code>, <code>Layer0_CRM</code>.</li>
+<li>Put it on a mesh.</li>
+</ol>
+
+<p>That is the whole setup. Everything else is off and costs nothing.</p>
+
+<p>Start from whichever preset is closest rather than turning switches on yourself. Every distinct set of switches is another shader permutation, and parenting to a preset is what keeps that count down.</p>
+
+<div class="tw"><table>
+<tr><td><code>_Prop</code></td><td>everything off. Three texture samples</td></tr>
+<tr><td><code>_Building</code></td><td>two layers, vertex paint, wetness</td></tr>
+<tr><td><code>_Rock</code></td><td>triplanar, wetness</td></tr>
+<tr><td><code>_Lamp</code></td><td>emissive</td></tr>
+</table></div>
+
+<h2>First landscape</h2>
+
+<p>Set the recipe's <b>Layers</b>. The first is the base, and it holds whatever weight the painted layers leave behind. Generate, then:</p>
+
+<ol>
+<li>Assign <code>MI_&lt;AssetName&gt;</code> to your landscape.</li>
+<li>In Landscape mode, press <b>+</b> beside each target layer to create its layer info asset.</li>
+<li>Point each layer's <code>_BC</code>, <code>_NRM</code>, <code>_HRC</code> parameters at your textures.</li>
+<li><b>Mat &rarr; Fit UV Scale To Landscape&hellip;</b> so a tile measures the metres you asked for.</li>
+<li>Paint.</li>
+</ol>
+
+<div class="note">
+Layer count is built into the material graph, so it cannot be changed on an instance. Edit the recipe and generate again.
+</div>
+
+<h2>Try it</h2>
+
+<p><b>Test Level</b> in the generate window builds a level demonstrating a surface master, one feature per object - plain, three-layer blend, vertex paint, triplanar, wetness, per-object variation, emissive - using the placeholder textures and separating the layers by tint, so nothing needs art to read. It opens a new level, so it asks first.</p>
+
+<div data-shot="install.test-level"></div>
+
+<p><a class="cta" href="workflow.html">Now build a world &rarr;</a></p>
+
+<h2>The Mat menu</h2>
+
+<div data-shot="install.mat-menu"></div>
+
+<p>Every recipe in the project appears directly on the menu, so regenerating one later is a single click.</p>
+
+<div class="tw"><table class="free">
+<tr><td><b>Verify Contract</b></td><td>asserts what each master claims to cost - taps and samplers per feature, the ambient occlusion pin left free, primitive data indices unmoved. Results in the Output Log</td></tr>
+<tr><td><b>Report Cost</b></td><td>how many distinct shader maps the instances add up to, and how much texture each master keeps resident</td></tr>
+<tr><td><b>Pack Layers for &lt;Recipe&gt;</b></td><td>packs a landscape recipe's layer textures into the arrays its master samples. Only listed for recipes using them</td></tr>
+<tr><td><b>Edit Layers&hellip;</b></td><td>every layer's parameters in one window, grouped as tabs, without opening and rebuilding the instance</td></tr>
+<tr><td><b>Simplify Material To Layer&hellip;</b></td><td>turns a landscape material down to one layer so what is on screen is that layer's art and nothing else. Everything it changes is recorded, and Restore in the same window puts it back exactly. Reset takes those parameters to the parent's values, which is the way out when the recording is gone</td></tr>
+<tr><td><b>Fit UV Scale To Landscape&hellip;</b></td><td>reads the landscape's own quad size and writes every layer's <code>UVScale</code> so a tile measures the metres you asked for. A resized landscape does not have the quads the defaults assume, and then every layer tiles wrongly at once</td></tr>
+<tr><td><b>Remap Texture Channels&hellip;</b></td><td>repacks incoming art into the HRC a landscape layer reads, the CRM a surface reads or the CRT a foliage master reads. Common layouts are presets; anything else is three slots you set yourself</td></tr>
+<tr><td><b>Assign Selected Textures To Landscape</b></td><td>takes the textures selected in the Content Browser and puts them on the matching layer slots by suffix</td></tr>
+<tr><td><b>Snap Selected Actor To Landscape Centre</b></td><td>drops the selection in the middle of the nearest landscape, sitting on the surface</td></tr>
+<tr><td><b>Fit Selected Box Volume To Landscape</b></td><td>centres and scales the selected volume to cover the nearest landscape exactly, streaming proxies included. Clears its rotation, since a turned box cannot be scaled to cover an axis aligned one</td></tr>
+<tr><td><b>Wire Landscape Runtime Virtual Textures</b></td><td>points the landscape at the RVT assets the recipe generated</td></tr>
+<tr><td><b>Rebake Landscape Physical Materials</b></td><td>rebakes which physical material the ground reports underfoot. The output is baked into collision data rather than read per trace, so a regenerated master changes nothing about what a footstep hears until this runs. Leaves the mobile preview first, since the landscape refuses to bake below SM5. Save the level afterwards</td></tr>
+<tr><td><b>Open &lt;MI&gt;, Open &lt;Master&gt;</b></td><td>the material instance the open level's landscape renders with, and the master behind it</td></tr>
+<tr><td><b>Open MPC_MobWeather</b></td><td>straight to the wetness and snowfall dials</td></tr>
+<tr><td><b>Editor Preferences</b></td><td>per-developer settings, not checked in</td></tr>
+<tr><td><b>Hide This Menu</b></td><td>takes the Mat button off your toolbar. Turn it back on under Editor Preferences, Plugins, Mob Materials Editor</td></tr>
+</table></div>
+
+<div class="note">
+The generators can also be driven from the console - see <code>Python/author_landscape.py</code> and <code>Python/author_surface.py</code>. A material that has already been authored works without the Python plugin.
+</div>
+
+</main>
+</body>
+</html>

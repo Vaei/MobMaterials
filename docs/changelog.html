@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Changelog &middot; MobMaterials</title>
+<link rel="icon" href="../Resources/Icon128.png">
+<link rel="stylesheet" href="assets/docs.css">
+<script>try{var t=localStorage.getItem('mob-theme');document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/docs.js" defer></script>
+</head>
+<body>
+<main>
+
+<h1>Changelog</h1>
+<p class="lede">UE 5.8+. MIT licensed.</p>
+
+<div class="caution">
+MobMaterials has not officially released. Expect bugs, and updates without versioning or a changelog entry reflecting them.
+</div>
+
+<h2>1.0.0</h2>
+
+<ul>
+<li>Initial release.</li>
+<li><b>Landscape master</b>: paint layers with height-interlocked blending, stochastic hex tiling and a cheap dual-scale tier, slope rock, moss placed by cavity and slope, slope and altitude layer masks, wetness, optional texture array layers.</li>
+<li><b>Surface master</b>: three layers, vertex paint, triplanar, height blending, detail normals, distance tiling break, parallax offset and occlusion, wetness with puddles and rain ripples, accumulation for snow, dust and ash, colour and macro variation, custom primitive data, emissive.</li>
+<li><b>Foliage master</b>: masked, two-sided foliage shading, subsurface with an optional per-texel transmission mask in the blue channel, wind on world position offset, and rustle from bodies moving through it.</li>
+<li><b>Project integration</b>: runtime virtual texture with mesh blending, physical material output for footsteps, grass output.</li>
+<li>Debug views on both masters, sent to emissive with base colour blacked out.</li>
+<li>Recipe assets drive generation, so a project carries as many masters as it needs.</li>
+<li><b>Mat</b> toolbar menu: generate, pack layer arrays, test level, contract verification, cost reporting, weather collection, and a per-developer hide.</li>
+<li><b>Fit UV Scale To Landscape</b>: every layer's tile size worked out from the landscape's own quad size.</li>
+<li><b>Remap Texture Channels</b>: repacks ORM, MRAO, RMA or separate maps into HRC, CRM or CRT, with a custom slot per output channel.</li>
+</ul>
+
+</main>
+</body>
+</html>
