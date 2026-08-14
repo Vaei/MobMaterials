@@ -1425,8 +1425,8 @@ RVT_TERRAIN = RVT_DIR + '/RVT_MobTerrain'
 RVT_HEIGHT = RVT_DIR + '/RVT_MobTerrainHeight'
 
 
-def _get_or_create_rvt(package_path, name):
-    path = package_path + '/' + name
+def _get_or_create_rvt(path):
+    package_path, name = path.rsplit('/', 1)
     if EAL.does_asset_exist(path):
         return unreal.load_asset(path)
     return _tools().create_asset(name, package_path, unreal.RuntimeVirtualTexture,
@@ -1442,7 +1442,9 @@ def build_rvt_assets(tile_count=4, tile_size=2, tile_border=2):
     """
     MT = unreal.RuntimeVirtualTextureMaterialType
 
-    terrain = _get_or_create_rvt(RVT_DIR, 'RVT_MobTerrain')
+    # Named from the paths, which a recipe rewrites: two landscape recipes sharing one pair of
+    # runtime virtual textures would have each write over the other's terrain.
+    terrain = _get_or_create_rvt(RVT_TERRAIN)
     terrain.set_editor_property('material_type', MT.BASE_COLOR_NORMAL_ROUGHNESS)
     terrain.set_editor_property('tile_count', tile_count)
     terrain.set_editor_property('tile_size', tile_size)
@@ -1450,7 +1452,7 @@ def build_rvt_assets(tile_count=4, tile_size=2, tile_border=2):
     terrain.set_editor_property('compress_textures', True)
     save(terrain)
 
-    height = _get_or_create_rvt(RVT_DIR, 'RVT_MobTerrainHeight')
+    height = _get_or_create_rvt(RVT_HEIGHT)
     height.set_editor_property('material_type', MT.WORLD_HEIGHT)
     height.set_editor_property('tile_count', max(tile_count - 2, 0))
     height.set_editor_property('tile_size', tile_size)
@@ -2485,6 +2487,24 @@ def build_material_instances():
 # ---------------------------------------------------------------------------
 # Level wiring
 # ---------------------------------------------------------------------------
+
+def wire_rvt(recipe=None, expand=0.0):
+    """wire_landscape_rvt, against the RVT assets a recipe names.
+
+    The entry point the Mat menu runs: which RVTs the landscape writes into is the recipe's, so
+    the module has to be describing that recipe before the level is touched.
+    """
+    import mob_recipe
+    import importlib as _il
+    _il.reload(mob_recipe)
+    mob_recipe.apply_landscape(sys.modules[__name__], mob_recipe.load(recipe))
+
+    if not BUILD_PROJECT_OUTPUTS:
+        raise RuntimeError('this recipe has Build Project Outputs off, so its master has no RVT to wire')
+
+    build_rvt_assets()
+    return wire_landscape_rvt(expand)
+
 
 def wire_landscape_rvt(expand=0.0):
     """Points the open level's landscape at both RVTs and fits a volume to each.

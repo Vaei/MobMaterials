@@ -15,6 +15,14 @@ public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 
+	/**
+	 * The recipe that authored the master the open level's landscape renders with, matched by name.
+	 *
+	 * Which runtime virtual textures the terrain writes into is the recipe's answer, so wiring the
+	 * level needs the recipe rather than the material the level points at.
+	 */
+	static class UMobMaterialRecipe* GetLandscapeRecipe();
+
 private:
 	void RegisterMenus();
 	TSharedRef<SWidget> BuildMenu();
@@ -33,6 +41,11 @@ private:
 
 	/** Packs one recipe's layer textures into the arrays its master samples. */
 	static void PackLayerArrays(FSoftObjectPath Path);
+
+	/** Points the landscape at its runtime virtual textures and fits a volume to each. */
+	static void WireLandscapeRVT();
+	static bool CanWireLandscapeRVT();
+	static FText WireRVTReason();
 
 	/** Runs a snippet against the plugin's Python directory. */
 	static bool RunPython(const FString& Snippet, const FText& DoneMessage);

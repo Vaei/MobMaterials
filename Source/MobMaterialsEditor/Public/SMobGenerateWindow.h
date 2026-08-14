@@ -31,6 +31,9 @@ public:
 	/** Builds a level demonstrating a surface recipe's master, one feature per object. */
 	static bool CreateTestLevel(UMobMaterialRecipe* Recipe);
 
+	/** Points the open level's landscape at the runtime virtual textures a recipe names. */
+	static bool WireRVT(UMobMaterialRecipe* Recipe);
+
 private:
 	FReply OnGenerateClicked();
 	FReply OnTestLevelClicked();

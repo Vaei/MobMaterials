@@ -303,7 +303,8 @@ In order of likelihood.
 | Mip seams across hex cells | A tap lost its explicit gradients. Every tier needs them: the samplers are Shared:Wrap and the coordinates are discontinuous per cell |
 | Grass or footsteps do nothing | **Build Project Outputs** is off on the recipe, so those outputs are not on the material |
 | Meshes cut a hard silhouette into the ground | `MF_<AssetName>RVTBlend` is only authored with Build Project Outputs on, and has to be added to the mesh's own material |
-| Terrain renders but ignores paint | `bUseRVT` is on and the RVT volume is missing or unfitted. Run `wire_landscape_rvt()`, or turn `bUseRVT` off |
+| Ground is black and mirror-smooth whatever the layers are set to | `bUseRVT` is on and nothing writes the texture it samples, so the sample reads zero: base colour 0 and roughness 0. **Wire Landscape Runtime Virtual Textures** points the landscape at it, and generating the recipe points the master at the same pair. In mobile forward preview the same cause reads as `WorldGridMaterial` over the unpainted layers and mirror-black over the painted ones; in deferred it is mirror-black throughout |
+| Terrain renders but ignores paint | `bUseRVT` is on and the RVT volume is missing or unfitted. Run **Wire Landscape Runtime Virtual Textures**, or turn `bUseRVT` off |
 
 ### Surface
 

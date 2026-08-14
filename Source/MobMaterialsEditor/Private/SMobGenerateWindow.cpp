@@ -2,6 +2,7 @@
 
 #include "SMobGenerateWindow.h"
 #include "MobLevelTools.h"
+#include "MobMaterialsEditor.h"
 
 #include "IDetailsView.h"
 #include "IPythonScriptPlugin.h"
@@ -330,6 +331,15 @@ bool SMobGenerateWindow::Generate(UMobMaterialRecipe* Recipe)
 	const bool bBuilt = RunGenerator(Recipe, Module, TEXT("build_all"),
 		FText::Format(LOCTEXT("GenDone", "Mat: authored M_{0}."), FText::FromString(Recipe->AssetName)));
 
+	// The master samples the runtime virtual textures by asset, and the level decides what writes
+	// into them, so the two agree only if both are done. A master sampling a texture nothing writes
+	// reads black, which is indistinguishable from a material that has not been set up at all.
+	if (bBuilt && Recipe->bBuildProjectOutputs
+		&& FMobMaterialsEditorModule::GetLandscapeRecipe() == Recipe)
+	{
+		WireRVT(Recipe);
+	}
+
 	// What the ground reports underfoot is baked into collision data, not read per trace, so a
 	// regenerated master says something new and every footstep keeps hearing the old answer until
 	// this runs. It is the step that gets forgotten, so it is not a step.
@@ -340,6 +350,20 @@ bool SMobGenerateWindow::Generate(UMobMaterialRecipe* Recipe)
 	}
 
 	return bBuilt;
+}
+
+bool SMobGenerateWindow::WireRVT(UMobMaterialRecipe* Recipe)
+{
+	if (!Recipe || Recipe->Kind != EMobMaterialKind::Landscape)
+	{
+		Notify(LOCTEXT("WireNeedsLandscape",
+			"Mat: runtime virtual textures are wired from a landscape recipe."), false);
+		return false;
+	}
+
+	return RunGenerator(Recipe, TEXT("author_landscape"), TEXT("wire_rvt"),
+		LOCTEXT("WireDone",
+			"Mat: the landscape now writes its runtime virtual textures, and each volume covers it."));
 }
 
 bool SMobGenerateWindow::CreateTestLevel(UMobMaterialRecipe* Recipe)

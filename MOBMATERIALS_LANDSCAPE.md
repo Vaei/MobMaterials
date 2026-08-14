@@ -223,7 +223,11 @@ Two are authored - one carrying base colour, normal and roughness, one carrying 
 
 `bUseRVT` on the instance chooses which path the base pass takes. Off routes it through the layer blend directly, which is what you want where `r.VirtualTextures` is off, since the sample would otherwise return nothing.
 
-`wire_landscape_rvt()` points the open level's landscape at both and fits a volume to each.
+Both are named after the master, so two landscape recipes never share a pair and write over each other's terrain.
+
+Two halves have to agree, and each is set somewhere else: the master samples a named texture, and the level decides what writes into it. **Wire Landscape Runtime Virtual Textures**, in the Mat menu's Level section, does the level half - it points the landscape and every proxy at the pair and fits a volume to each. Generating the recipe does the material half, and does the level half too when the open level's landscape is the one that recipe authored.
+
+Get only one half and the master samples a texture nothing writes, which returns zero rather than failing: base colour 0 and roughness 0, so the ground is black and mirror-smooth and nothing you set on a layer changes it. In mobile forward preview it reads instead as `WorldGridMaterial` over the unpainted layers and mirror-black over the painted ones. `bUseRVT` off is the other way out, and is the right answer where `r.VirtualTextures` is off.
 
 ### Blending meshes into the terrain
 

@@ -334,6 +334,19 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 			FCanExecuteAction::CreateStatic(&FMobLevelTools::CanFitBoxToLandscape)));
 
 	Menu.AddMenuEntry(
+		LOCTEXT("WireRVT", "Wire Landscape Runtime Virtual Textures"),
+		Reason(LOCTEXT("WireRVTTip",
+			"Points the landscape and every proxy at the runtime virtual textures its recipe names, "
+			"and fits a volume to each. Until this has run the textures are never written, and a "
+			"material with Use RVT on samples black: unlit black ground that no layer's art can "
+			"change."),
+			&FMobMaterialsEditorModule::WireRVTReason),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.RuntimeVirtualTexture")),
+		FUIAction(
+			FExecuteAction::CreateStatic(&FMobMaterialsEditorModule::WireLandscapeRVT),
+			FCanExecuteAction::CreateStatic(&FMobMaterialsEditorModule::CanWireLandscapeRVT)));
+
+	Menu.AddMenuEntry(
 		LOCTEXT("RebuildPhysMat", "Rebake Landscape Physical Materials"),
 		Reason(LOCTEXT("RebuildPhysMatTip",
 			"Rebakes which physical material the ground reports underfoot. The material's physical "
@@ -403,6 +416,64 @@ void FMobMaterialsEditorModule::OpenWindow()
 void FMobMaterialsEditorModule::GenerateRecipe(FSoftObjectPath Path)
 {
 	SMobGenerateWindow::Generate(Cast<UMobMaterialRecipe>(Path.TryLoad()));
+}
+
+UMobMaterialRecipe* FMobMaterialsEditorModule::GetLandscapeRecipe()
+{
+	const UMaterialInterface* Master = FMobLevelTools::GetLandscapeMaster();
+	if (!Master)
+	{
+		return nullptr;
+	}
+
+	const FString MasterName = Master->GetName();
+
+	TArray<FAssetData> Recipes;
+	FindRecipes(Recipes);
+
+	for (const FAssetData& Asset : Recipes)
+	{
+		UMobMaterialRecipe* Recipe = Cast<UMobMaterialRecipe>(Asset.GetAsset());
+		if (Recipe && Recipe->Kind == EMobMaterialKind::Landscape
+			&& MasterName == TEXT("M_") + Recipe->AssetName)
+		{
+			return Recipe;
+		}
+	}
+	return nullptr;
+}
+
+bool FMobMaterialsEditorModule::CanWireLandscapeRVT()
+{
+	return IsPythonAvailable() && GetLandscapeRecipe() != nullptr;
+}
+
+FText FMobMaterialsEditorModule::WireRVTReason()
+{
+	if (!IsPythonAvailable())
+	{
+		return LOCTEXT("WireNoPython", "This needs the Python Editor Script Plugin.");
+	}
+
+	const UMaterialInterface* Master = FMobLevelTools::GetLandscapeMaster();
+	if (!Master)
+	{
+		return LOCTEXT("WireNoLandscape", "There is no landscape in this level.");
+	}
+
+	if (!GetLandscapeRecipe())
+	{
+		return FText::Format(LOCTEXT("WireNoRecipe",
+			"No landscape recipe authored {0}, so there is nothing to say which runtime virtual "
+			"textures it writes."), FText::FromString(Master->GetName()));
+	}
+
+	return FText::GetEmpty();
+}
+
+void FMobMaterialsEditorModule::WireLandscapeRVT()
+{
+	SMobGenerateWindow::WireRVT(GetLandscapeRecipe());
 }
 
 bool FMobMaterialsEditorModule::RunPython(const FString& Snippet, const FText& DoneMessage)
