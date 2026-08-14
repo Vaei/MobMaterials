@@ -1310,8 +1310,8 @@ def _build_layer_block(mat, index, shared, x, y):
 
     # The function input is CRM either way; the parameter is named for what this master reads out
     # of blue, so a foliage instance asks for the pack it actually wants.
-    for pin, default_path, sort in (('BC', BASE_TEX_BC, 0), ('NRM', BASE_TEX_NRM, 1),
-                                    ('CRM', BASE_TEX_CRM, 2)):
+    for pin, default_path, sort in (('BC', BASE_TEX_BC, 0), ('CRM', BASE_TEX_CRM, 1),
+                                    ('NRM', BASE_TEX_NRM, 2)):
         param = 'CRT' if (pin == 'CRM' and FOLIAGE) else pin
         tex = _param_texture(mat, '%s_%s' % (layer, param), default_path, group, x,
                              y + 80 * sort, sort)
