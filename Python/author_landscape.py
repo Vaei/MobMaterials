@@ -2459,6 +2459,9 @@ def build_material_instances():
     pass through the layer blend directly instead. Trim the layer set on that variant per map: the
     static switches compile unused layers out entirely. bUseRVT only exists when
     BUILD_PROJECT_OUTPUTS is on.
+
+    The variant is a child of the instance rather than of the master, so it differs by the switches
+    alone and everything authored on the instance reaches it.
     """
     master = unreal.load_asset(ROOT + '/M_' + MASTER_NAME)
 
@@ -2467,7 +2470,7 @@ def build_material_instances():
         MEL.set_material_instance_static_switch_parameter_value(base, 'bUseRVT', True)
     save(base)
 
-    switch = _get_or_create_instance('MI_' + MASTER_NAME + '_Switch', master)
+    switch = _get_or_create_instance('MI_' + MASTER_NAME + '_Switch', base)
     if BUILD_PROJECT_OUTPUTS:
         MEL.set_material_instance_static_switch_parameter_value(switch, 'bUseRVT', False)
     for layer, _s, _p in LAYERS:
