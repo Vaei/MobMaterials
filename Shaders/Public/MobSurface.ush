@@ -366,6 +366,54 @@ float3 MobWind(float3 WorldPos, float3 ObjectPos, float3 Direction, float Time,
 	return Dir * Sway + Side * Flutter;
 }
 
+/**
+ * World position offset for one thing pushing through the plant.
+ *
+ * Sphere is where it is and how far it reaches, in world units. Push is which way it is shoving and
+ * how hard, with the seconds since the disturbance began in w - written by the game rather than read
+ * off a Time node, so a pause or a slow motion cannot leave the ring running at a different rate to
+ * everything else.
+ *
+ * The vertex is carried along the push and shoved away from the centre at the same time, which is
+ * what makes a body read as parting the leaves rather than dragging them sideways. What is left
+ * after it passes is a ring: an oscillation whose phase runs outward from the centre, under an
+ * exponential that takes it back to still. That decay is the whole illusion of a simulation, so
+ * Damping is the knob that decides whether a plant is a stiff shrub or a loose sapling.
+ *
+ * Weighted by vertex colour red alone, which unpainted is white and so moves everything the sphere
+ * reaches. No height term: the sphere is already the localisation, and a body brushing a canopy
+ * stands below the middle of the plant's bounds, which is the one place a height weight taken from
+ * ObjectPositionWS is zero. What keeps a trunk still is that a trunk is a different material.
+ */
+float3 MobRustle(float3 WorldPos, float4 Sphere, float4 Push, float Weight,
+	float Frequency, float Damping)
+{
+	const float Reach = max(Sphere.w, MOB_EPS);
+	const float3 Delta = WorldPos - Sphere.xyz;
+	const float Dist = length(Delta);
+
+	// Squared so the edge of the sphere is a taper rather than a crease across the canopy.
+	float Falloff = saturate(1.0f - Dist / Reach);
+	Falloff *= Falloff * saturate(Weight);
+
+	// Nothing survives the falloff, so the rest of the maths is only worth doing inside the sphere.
+	if (Falloff <= 0.0f)
+	{
+		return float3(0.0f, 0.0f, 0.0f);
+	}
+
+	const float Age = max(Push.w, 0.0f);
+	const float Envelope = exp(-Age * max(Damping, 0.0f));
+
+	const float3 Away = Delta / max(Dist, MOB_EPS);
+	const float3 Shove = Push.xyz + Away * length(Push.xyz) * 0.5f;
+
+	// Metres rather than centimetres, so one wavelength is about a plant and not about a leaf.
+	const float Ring = sin(Age * Frequency - Dist * 0.01f * Frequency);
+
+	return Shove * Falloff * Envelope * (0.6f + 0.4f * Ring);
+}
+
 // ---------------------------------------------------------------------------
 // Transmission
 // ---------------------------------------------------------------------------

@@ -250,6 +250,28 @@ public:
 	TSoftObjectPtr<UMaterialParameterCollection> TrampleCollection;
 
 	/**
+	 * Adds rustle to the foliage master: a plant pushed about by whatever is moving through it, which
+	 * rings and settles rather than snapping back.
+	 *
+	 * No extra samples, and no pixel cost at all - it is world position offset, on the same pin and
+	 * the same painted weight as the wind. What writes the slots is UMobRustleSubsystem, so nothing
+	 * happens until something in the world carries a disturbance component.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
+		meta=(EditCondition="Kind == EMobMaterialKind::Surface && bFoliage", EditConditionHides))
+	bool bRustle = true;
+
+	/**
+	 * Parameter collection carrying where the disturbers are.
+	 *
+	 * Every plant that should react to the same body has to name the same collection. Leave it empty
+	 * and generating uses the plugin's, then fills this in.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
+		meta=(EditCondition="Kind == EMobMaterialKind::Surface && bFoliage && bRustle", EditConditionHides))
+	TSoftObjectPtr<UMaterialParameterCollection> RustleCollection;
+
+	/**
 	 * Samples the paint layers out of three texture arrays instead of three textures per layer.
 	 *
 	 * Texture count stops growing with layer count: eight layers is three texture objects rather

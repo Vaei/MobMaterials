@@ -61,6 +61,14 @@ TRAMPLE_CENTRE_PARAM = 'TrampleCentre'
 TRAMPLE_EXTENT_PARAM = 'TrampleExtent'
 INCLUDE_TRAMPLE = True
 
+# Written by UMobRustleSubsystem at runtime, one pair of vectors per disturber. A fixed count, because
+# a collection has no arrays; four covers a duel and the people watching it.
+RUSTLE_MPC = '/MobMaterials/MPC_MobRustle'
+RUSTLE_SLOTS = 4
+RUSTLE_SPHERE_PARAM = 'Rustle%dSphere'
+RUSTLE_PUSH_PARAM = 'Rustle%dPush'
+INCLUDE_RUSTLE = True
+
 # Set by mob_recipe so a newly created collection can be written back onto the recipe.
 RECIPE = None
 
@@ -748,9 +756,35 @@ return MobWind(WorldPos, ObjectPos, Direction, Time, Strength, Speed,
                FlutterStrength, FlutterSpeed, Weight);
 """
 
+# Every slot in one node. A Custom node emits its whole body, so a node per slot would be a copy of
+# the helper per slot.
+_CODE_RUSTLE = """
+float3 Offset = 0.0f;
+%s
+return Offset;
+""" % '\n'.join(
+    'Offset += MobRustle(WorldPos, Sphere%d, Push%d, Weight, Frequency, Damping);' % (i, i)
+    for i in range(RUSTLE_SLOTS))
+
 _CODE_TRANSMISSION = """
 return MobTransmission(Color, Mask, Amount);
 """
+
+RUSTLE_DESC = (
+    'Lets bodies moving through the plant push it about. The game writes where they are into '
+    'MPC_MobRustle; nothing has to be wired per instance.\n\n'
+    'Off, the term compiles away entirely, so a plant nobody can reach costs nothing for it.'
+)
+
+RUSTLE_FREQUENCY_DESC = (
+    'How fast the plant rings after something has gone through it, in radians a second. Low reads '
+    'as a heavy branch, high as a light leaf.'
+)
+
+RUSTLE_DAMPING_DESC = (
+    'How quickly the ringing dies. This is what separates a stiff shrub from a loose sapling: high '
+    'and the plant is back to still almost at once, low and it goes on nodding.'
+)
 
 TRANSMISSION_AMOUNT_DESC = (
     'How much light comes through the leaf, over the whole plant. The subsurface colour already '
@@ -1171,6 +1205,48 @@ def ensure_trample_parameters():
         save(RECIPE)
         _log('recipe now points at %s' % TRAMPLE_MPC)
     _log('trample parameters ready%s' % (' (added %s)' % ', '.join(added) if added else ''))
+    return mpc
+
+
+def ensure_rustle_parameters():
+    """Creates the rustle collection if absent and makes sure it carries a slot per disturber.
+
+    A collection rather than instance parameters because UMobRustleSubsystem writes them at runtime
+    and every plant near the same body has to agree about where that body is.
+    """
+    if EAL.does_asset_exist(RUSTLE_MPC):
+        mpc = unreal.load_asset(RUSTLE_MPC)
+    else:
+        package, _, name = RUSTLE_MPC.rpartition('/')
+        mpc = _tools().create_asset(name, package, unreal.MaterialParameterCollection,
+                                    unreal.MaterialParameterCollectionFactoryNew())
+    if mpc is None:
+        raise RuntimeError('could not create %s' % RUSTLE_MPC)
+
+    existing = list(mpc.get_editor_property('vector_parameters'))
+    names = [str(p.get_editor_property('parameter_name')) for p in existing]
+    added = []
+    for i in range(RUSTLE_SLOTS):
+        # A zero radius is a slot nobody is in, which the falloff already resolves to no offset.
+        for name, default in ((RUSTLE_SPHERE_PARAM % i, (0.0, 0.0, 0.0, 0.0)),
+                              (RUSTLE_PUSH_PARAM % i, (0.0, 0.0, 0.0, 0.0))):
+            if name in names:
+                continue
+            p = unreal.CollectionVectorParameter()
+            p.set_editor_property('parameter_name', name)
+            p.set_editor_property('default_value', unreal.LinearColor(*default))
+            existing.append(p)
+            added.append(name)
+
+    if added:
+        mpc.set_editor_property('vector_parameters', existing)
+        save(mpc)
+
+    if RECIPE is not None and RECIPE.get_editor_property('rustle_collection') is None:
+        RECIPE.set_editor_property('rustle_collection', mpc)
+        save(RECIPE)
+        _log('recipe now points at %s' % RUSTLE_MPC)
+    _log('rustle parameters ready%s' % (' (added %s)' % ', '.join(added) if added else ''))
     return mpc
 
 
@@ -1803,7 +1879,44 @@ def build_master_material():
         gate = _switch_param(mat, 'bWind', wind, '',
                              _expr(mat, unreal.MaterialExpressionConstant3Vector, -500, 1320),
                              '', GROUP_FOLIAGE, -300, 1200)
-        MEL.connect_material_property(gate, '', MP.MP_WORLD_POSITION_OFFSET)
+
+        wpo, wpo_out = gate, ''
+        if INCLUDE_RUSTLE:
+            rustle_collection = unreal.load_asset(RUSTLE_MPC)
+            rustle_inputs = []
+            for i in range(RUSTLE_SLOTS):
+                for pin, param in (('Sphere%d' % i, RUSTLE_SPHERE_PARAM % i),
+                                   ('Push%d' % i, RUSTLE_PUSH_PARAM % i)):
+                    node = _expr(mat, unreal.MaterialExpressionCollectionParameter,
+                                 -1200, 1900 + 60 * len(rustle_inputs))
+                    node.set_editor_property('collection', rustle_collection)
+                    node.set_editor_property('parameter_name', param)
+                    rustle_inputs.append((pin, node))
+
+            rustle = custom(mat, _CODE_RUSTLE, CMOT.CMOT_FLOAT3,
+                            ['WorldPos', 'Weight', 'Frequency', 'Damping']
+                            + [name for name, _ in rustle_inputs],
+                            [], -600, 1900, 'Rustle')
+            link(worldpos, '', rustle, 'WorldPos')
+            link(vcol, 'R', rustle, 'Weight')
+            link(_param_scalar(mat, 'RustleFrequency', 9.0, GROUP_FOLIAGE, -1200, 1750, 20,
+                               desc=RUSTLE_FREQUENCY_DESC), '', rustle, 'Frequency')
+            link(_param_scalar(mat, 'RustleDamping', 2.2, GROUP_FOLIAGE, -1200, 1800, 21,
+                               desc=RUSTLE_DAMPING_DESC), '', rustle, 'Damping')
+            for name, node in rustle_inputs:
+                link(node, '', rustle, name)
+
+            rustle_gate = _switch_param(
+                mat, 'bRustle', rustle, '',
+                _expr(mat, unreal.MaterialExpressionConstant3Vector, -400, 2020),
+                '', GROUP_FOLIAGE, -400, 1900, desc=RUSTLE_DESC)
+
+            wpo = _expr(mat, unreal.MaterialExpressionAdd, -150, 1550)
+            wpo_out = ''
+            link(gate, '', wpo, 'A')
+            link(rustle_gate, '', wpo, 'B')
+
+        MEL.connect_material_property(wpo, wpo_out, MP.MP_WORLD_POSITION_OFFSET)
 
         # Two-sided foliage reads this as the colour of light coming through a leaf.
         sss_color = _param_vector(mat, 'SubsurfaceColor', (0.15, 0.35, 0.08), GROUP_FOLIAGE,
@@ -1926,7 +2039,7 @@ _SWITCH_DEFAULTS = {
     'Layer2_ParallaxOcclusion': False,
     'bWetness': False, 'bColorVariation': False, 'bMacroVariation': False, 'bEmissive': False,
     'bDetail': False, 'bPrimitiveData': False, 'bDebug': False,
-    'bAccumulation': False, 'bRipples': False, 'bWind': False,
+    'bAccumulation': False, 'bRipples': False, 'bWind': False, 'bRustle': False,
 }
 
 
@@ -1952,6 +2065,8 @@ def build_material_instances():
                 continue
             if switch == 'bWind' and not FOLIAGE:
                 continue
+            if switch == 'bRustle' and not (FOLIAGE and INCLUDE_RUSTLE):
+                continue
             MEL.set_material_instance_static_switch_parameter_value(
                 mi, switch, bool(overrides.get(switch, default)))
         save(mi)
@@ -1976,6 +2091,8 @@ def build_all(recipe=None):
     ensure_weather_parameters()
     if INCLUDE_TRAMPLE:
         ensure_trample_parameters()
+    if INCLUDE_RUSTLE:
+        ensure_rustle_parameters()
     build_functions()
 
     # Siblings first, so the module is left describing the recipe that was asked for.

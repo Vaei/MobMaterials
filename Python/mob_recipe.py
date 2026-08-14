@@ -104,6 +104,15 @@ def _apply_trample(module, recipe):
     module.RECIPE = recipe
 
 
+def _apply_rustle(module, recipe):
+    module.INCLUDE_RUSTLE = bool(recipe.get_editor_property('rustle'))
+
+    # Unset: the plugin's own, for the same reason trample uses one collection. Two plants near the
+    # same body reading different collections means only one of them moves.
+    module.RUSTLE_MPC = _collection(recipe, 'rustle_collection') or module.RUSTLE_MPC
+    module.RECIPE = recipe
+
+
 def _apply_common(module, recipe):
     root = _dir(recipe, 'output_path', module.ROOT)
     module.ROOT = root
@@ -188,6 +197,7 @@ def apply_surface(module, recipe):
     module.FOLIAGE = bool(recipe.get_editor_property('foliage'))
     module.INCLUDE_ACCUMULATION = bool(recipe.get_editor_property('accumulation'))
     module.INCLUDE_RIPPLES = bool(recipe.get_editor_property('rain_ripples'))
+    _apply_rustle(module, recipe)
 
     module._log('%s: %s, weather %s, detail %s'
                 % (module.MASTER_NAME, module.ROOT, module.WEATHER_MPC,
@@ -199,5 +209,6 @@ def apply_surface(module, recipe):
                 % ('on' if module.INCLUDE_PRIMITIVE_DATA else 'off',
                    'on' if module.INCLUDE_DEBUG else 'off'))
     if module.FOLIAGE:
-        module._log('  foliage: masked, two sided, wind')
+        module._log('  foliage: masked, two sided, wind, rustle %s'
+                    % (module.RUSTLE_MPC if module.INCLUDE_RUSTLE else 'off'))
     return module

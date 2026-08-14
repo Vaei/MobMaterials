@@ -69,6 +69,7 @@ def _probe(mat, name, on):
     s = MEL.get_statistics(mi)
     return {
         'ps': s.get_editor_property('num_pixel_shader_instructions'),
+        'vs': s.get_editor_property('num_vertex_shader_instructions'),
         'samplers': s.get_editor_property('num_samplers'),
         'tex': s.get_editor_property('num_pixel_texture_samples'),
     }
@@ -191,6 +192,15 @@ def run(recipe):
 
         if foliage:
             r.check('wind is on the foliage master', 'bWind' in switches)
+            r.check('rustle is on the foliage master', 'bRustle' in switches)
+
+            # Rustle is world position offset, so it is the vertex count that has to move. A pixel
+            # count would pass whether or not the term was ever compiled.
+            rustle_on = _probe(mat, 'V_rustle', {'bRustle'})
+            rustle_off = _probe(mat, 'V_rustle_off', set())
+            r.check('rustle costs nothing when off',
+                    rustle_on['vs'] > rustle_off['vs'],
+                    'vs %s -> %s' % (rustle_off['vs'], rustle_on['vs']))
             # An enum stringifies as "<BlendMode.BLEND_MASKED: 1>", so match on the name appearing.
             r.check('foliage is masked and two sided',
                     bool(mat.get_editor_property('two_sided'))
