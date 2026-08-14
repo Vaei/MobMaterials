@@ -2162,18 +2162,14 @@ def build_master_material():
                  for index, (layer, _s, _p) in enumerate(LAYERS)]
     phys_pins += [('SlopeMask', slope, 'Mask'), ('MossMask', moss, 'Mask'), ('WetMask', wet, 'Mask')]
 
-    phys = custom(mat, _CODE_PHYSMAT, CMOT.CMOT_FLOAT1, [p[0] for p in phys_pins],
-                  [('OutSoil', CMOT.CMOT_FLOAT1), ('OutGravel', CMOT.CMOT_FLOAT1),
-                   ('OutStone', CMOT.CMOT_FLOAT1), ('OutForest', CMOT.CMOT_FLOAT1),
-                   ('OutSand', CMOT.CMOT_FLOAT1), ('OutMud', CMOT.CMOT_FLOAT1)],
+    phys_code, phys_map = _physmat_code()
+    phys = custom(mat, phys_code, CMOT.CMOT_FLOAT1, [p[0] for p in phys_pins],
+                  [(out, CMOT.CMOT_FLOAT1) for _pm, out in phys_map if out],
                   700, 600, 'Footstep surfaces')
     for pin, src, out in phys_pins:
         link(src, out, phys, pin)
 
     phys_out = _expr(mat, unreal.MaterialExpressionLandscapePhysicalMaterialOutput, 1200, 600)
-    phys_map = [('PhysMat_Grass', ''), ('PhysMat_Ground', 'OutSoil'), ('PhysMat_Gravel', 'OutGravel'),
-                ('PhysMat_Stone', 'OutStone'), ('PhysMat_ForestFloor', 'OutForest'),
-                ('PhysMat_Sand', 'OutSand'), ('PhysMat_Mud', 'OutMud')]
     entries = []
     for pm_name, _out in phys_map:
         entry = unreal.PhysicalMaterialInput()
@@ -2304,33 +2300,75 @@ def _layer_info_assets():
     return out
 
 
-# How the paint layers and procedural masks resolve to a footstep surface. Weights are summed
-# per physical material and the engine takes the dominant one.
-_CODE_PHYSMAT = """
-float Grass = GrassW + DryGrassW;
-float Soil = DirtW + PackedDirtW + GardenSoilW;
-float Gravel = GravelW + RakedGravelW;
-float Stone = StonePavingW + RockW;
-float Forest = ForestFloorW;
-float Sand = SandSiltW;
+# How the paint layers and procedural masks resolve to a footstep surface. Weights are summed per
+# physical material and the engine takes the dominant one.
+#
+# Bucket variable, the physical material it becomes, and the output pin carrying it. Grass is the
+# node's return value, so its pin is empty. Grass, Soil and Stone are always present: moss feeds
+# grass, wet soil feeds mud, and slope rock feeds stone whether or not anything is painted them.
+_PHYSMAT_BUCKETS = [
+    ('Grass',  'PhysMat_Grass',       '',          True),
+    ('Soil',   'PhysMat_Ground',      'OutSoil',   True),
+    ('Stone',  'PhysMat_Stone',       'OutStone',  True),
+    ('Gravel', 'PhysMat_Gravel',      'OutGravel', False),
+    ('Forest', 'PhysMat_ForestFloor', 'OutForest', False),
+    ('Sand',   'PhysMat_Sand',        'OutSand',   False),
+]
 
-// Slope rock and moss are never painted, so without this they would inherit whatever layer
-// happens to be underneath and a cliff face would sound like grass.
-Stone = max(Stone, SlopeMask);
-Grass = max(Grass, MossMask);
+# Mud is what soil becomes when it is wet, so it is derived rather than summed from a paint layer.
+_PHYSMAT_MUD = ('Mud', 'PhysMat_Mud', 'OutMud')
 
-// Wet soil is mud. This is why Mud needs no paint layer of its own.
-float Mud = Soil * WetMask;
-Soil = Soil * (1.0f - WetMask);
 
-OutSoil = saturate(Soil);
-OutGravel = saturate(Gravel);
-OutStone = saturate(Stone);
-OutForest = saturate(Forest);
-OutSand = saturate(Sand);
-OutMud = saturate(Mud);
-return saturate(Grass);
-"""
+def _physmat_code():
+    """The footstep surface body, summed from the layers this recipe actually paints.
+
+    Generated rather than fixed: the layer set is per recipe, so naming a weight the recipe has no
+    layer for would not compile, and a bucket nothing paints would claim a physical material that
+    can never win. Which bucket a layer lands in is the physical material named on it.
+    """
+    sums = {}
+    for layer, _surface, physmat in LAYERS:
+        sums.setdefault(physmat, []).append(layer + 'W')
+
+    used = [b for b in _PHYSMAT_BUCKETS if b[3] or sums.get(b[1])]
+
+    lines = []
+    for var, physmat, _out, _always in used:
+        terms = sums.get(physmat)
+        lines.append('float %s = %s;' % (var, ' + '.join(terms) if terms else '0.0f'))
+
+    lines += [
+        '',
+        '// Slope rock and moss are never painted, so without this they would inherit whatever',
+        '// layer happens to be underneath and a cliff face would sound like grass.',
+        'Stone = max(Stone, SlopeMask);',
+        'Grass = max(Grass, MossMask);',
+        '',
+        '// Wet soil is mud, which is why mud needs no paint layer of its own.',
+        'float %s = Soil * WetMask;' % _PHYSMAT_MUD[0],
+        'Soil = Soil * (1.0f - WetMask);',
+    ]
+
+    # A layer can still name the mud material, for ground that is meant to stay churned whatever
+    # the weather is doing. Folded in rather than replacing, so wet soil nearby still reads as mud.
+    painted_mud = sums.get(_PHYSMAT_MUD[1])
+    if painted_mud:
+        lines.append('%s = max(%s, %s);' % (_PHYSMAT_MUD[0], _PHYSMAT_MUD[0],
+                                            ' + '.join(painted_mud)))
+    lines.append('')
+
+    out_map = [(physmat, out) for _var, physmat, out, _always in used]
+    out_map.append((_PHYSMAT_MUD[1], _PHYSMAT_MUD[2]))
+
+    # The bucket with no output pin is the one the node returns.
+    returned = [var for var, _physmat, out, _always in used if not out]
+    for var, _physmat, out, _always in used:
+        if out:
+            lines.append('%s = saturate(%s);' % (out, var))
+    lines.append('%s = saturate(%s);' % (_PHYSMAT_MUD[2], _PHYSMAT_MUD[0]))
+    lines.append('return saturate(%s);' % returned[0])
+
+    return '\n'.join(lines) + '\n', out_map
 
 
 # ---------------------------------------------------------------------------
@@ -2360,8 +2398,16 @@ GRASS_TYPES = [
 
 
 def build_grass_types():
+    # A grass type names a paint layer, and the grass output takes that layer's weight as a pin.
+    # A recipe that does not paint the layer has no weight to give it, so the whole entry is
+    # skipped rather than authored and left dangling.
+    painted = {layer for layer, _s, _p in LAYERS}
+
     built = {}
     for asset_name, layer, varieties in GRASS_TYPES:
+        if layer not in painted:
+            _log('no %s layer here, skipping %s' % (layer, asset_name))
+            continue
         path = GRASS_DIR + '/' + asset_name
         if EAL.does_asset_exist(path):
             gt = unreal.load_asset(path)
