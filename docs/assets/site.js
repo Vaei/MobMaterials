@@ -6,7 +6,7 @@
 window.DOCS = {
 	title: 'MobMaterials',
 	repo: 'https://github.com/Vaei/MobMaterials',
-	icon: '../Resources/Icon128.png',
+	icon: 'assets/icon.png',
 	imgDir: 'img/',
 	footer: 'MobMaterials is MIT licensed. &middot; <a href="shots.html">Art checklist</a>',
 

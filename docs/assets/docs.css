@@ -105,7 +105,7 @@ body {
 	text-decoration: none;
 }
 
-.top .brand img { width: 22px; height: 22px; border-radius: 3px; }
+.top .brand img { width: 27px; height: 27px; }
 .top .spacer { flex: 1; }
 
 .iconbtn {
