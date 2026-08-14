@@ -28,6 +28,17 @@
 	--fill: #EAE3D4;
 	--fill-deep: #E1D8C5;
 
+	/* A severity ramp: sand, pine, plum, then two that leave the palette because
+	   a hazard reading as structure is a hazard nobody stops at. */
+	--plum-ink: #6B3F55;
+	--plum-fill: #EFE4E8;
+	--amber: #B57A16;
+	--amber-ink: #8A5C10;
+	--amber-fill: #F6EAD1;
+	--rust: #A83A2C;
+	--rust-ink: #8E2F23;
+	--rust-fill: #F6E2DD;
+
 	--rail: 250px;
 	--toc: 190px;
 	--measure: 74ch;
@@ -45,6 +56,15 @@
 	--dim: #9A907C;
 	--fill: #1C2C26;
 	--fill-deep: #22352D;
+
+	--plum-ink: #C08BA5;
+	--plum-fill: #2A1F26;
+	--amber: #D9A441;
+	--amber-ink: #E0B25C;
+	--amber-fill: #2C2617;
+	--rust: #E0736A;
+	--rust-ink: #E88A80;
+	--rust-fill: #2E1E1C;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -362,8 +382,27 @@ tbody tr:hover { background: var(--fill); }
 .warn::before { content: "Warning"; }
 .caution::before { content: "Caution"; }
 
-.warn, .caution { background: var(--fill-deep); }
-.caution { border-left-style: double; border-left-width: 5px; }
+/* Quietest of the five: this is context, not instruction. */
+.note { border-left-color: var(--sand); background: var(--fill); }
+.note::before { color: var(--dim); }
+
+.tip { border-left-color: var(--c-struct); background: var(--fill); }
+.tip::before { color: var(--c-struct); }
+
+.important { border-left-color: var(--c-action); background: var(--plum-fill); }
+.important::before { color: var(--plum-ink); }
+
+/* Warning and caution leave the palette on purpose. A hazard that reads as structure
+   is a hazard nobody stops at. */
+.warn { border-left-color: var(--amber); background: var(--amber-fill); }
+.warn::before { color: var(--amber-ink); }
+.caution { border-left-color: var(--rust); background: var(--rust-fill); border-left-width: 5px; }
+.caution::before { color: var(--rust-ink); }
+
+/* The sandy code wash fights a tinted callout, so tint it from the callout instead. */
+.note code, .tip code, .important code, .warn code, .caution code {
+	background: color-mix(in srgb, var(--c-text) 8%, transparent);
+}
 
 /* ------------------------------------------------------------------- cta */
 
