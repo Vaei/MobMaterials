@@ -130,6 +130,7 @@ void UMobRustleSubsystem::AddRustleImpulse(const UObject* WorldContextObject,
 	Slot.Radius = Radius;
 	Slot.Push = Push;
 	Slot.Age = 0.f;
+	Slot.Fade = 1.f;
 	Slot.Remaining = GetDefault<UMobRustleSettings>()->ImpulseLifetime;
 }
 
@@ -284,7 +285,9 @@ void UMobRustleSubsystem::AssignSlots()
 
 void UMobRustleSubsystem::TickSlots(float DeltaTime)
 {
-	const float SettleSpeed = GetDefault<UMobRustleSettings>()->SettleSpeed;
+	const UMobRustleSettings* Settings = GetDefault<UMobRustleSettings>();
+	const float SettleSpeed = Settings->SettleSpeed;
+	const float FadeSeconds = FMath::Max(Settings->ReleaseFadeSeconds, UE_KINDA_SMALL_NUMBER);
 
 	for (FMobRustleSlot& Slot : Slots)
 	{
@@ -293,6 +296,7 @@ void UMobRustleSubsystem::TickSlots(float DeltaTime)
 			Slot.Location = Owner->GetComponentLocation();
 			Slot.Radius = Owner->GetWorldRadius();
 			Slot.Push = Owner->GetPush();
+			Slot.Fade = 1.f;
 
 			// Held at nothing while they are still moving, which is what keeps a plant parted around
 			// somebody walking through it instead of settling under their feet.
@@ -307,6 +311,8 @@ void UMobRustleSubsystem::TickSlots(float DeltaTime)
 
 		Slot.Age += DeltaTime;
 		Slot.Remaining -= DeltaTime;
+		Slot.Fade = FMath::Clamp(Slot.Remaining / FadeSeconds, 0.f, 1.f);
+
 		if (Slot.Remaining <= 0.f)
 		{
 			Slot = FMobRustleSlot();
@@ -321,8 +327,8 @@ void UMobRustleSubsystem::PublishSlots() const
 		const FMobRustleSlot& Slot = Slots[Index];
 		SetVector(SphereParameter(Index), FLinearColor(
 			Slot.Location.X, Slot.Location.Y, Slot.Location.Z, Slot.Radius));
-		SetVector(PushParameter(Index), FLinearColor(
-			Slot.Push.X, Slot.Push.Y, Slot.Push.Z, Slot.Age));
+		const FVector Push = Slot.Push * Slot.Fade;
+		SetVector(PushParameter(Index), FLinearColor(Push.X, Push.Y, Push.Z, Slot.Age));
 	}
 }
 

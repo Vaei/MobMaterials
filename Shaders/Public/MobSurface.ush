@@ -369,49 +369,67 @@ float3 MobWind(float3 WorldPos, float3 ObjectPos, float3 Direction, float Time,
 /**
  * World position offset for one thing pushing through the plant.
  *
- * Sphere is where it is and how far it reaches, in world units. Push is which way it is shoving and
- * how hard, with the seconds since the disturbance began in w - written by the game rather than read
- * off a Time node, so a pause or a slow motion cannot leave the ring running at a different rate to
- * everything else.
+ * The plant is tipped away from the disturber by rotating it about its own pivot. Not translated:
+ * a translation slides the vertices past each other, which softens the silhouette and reads as the
+ * material sliding over the mesh rather than as a plant being pushed. A rotation keeps every blade
+ * and every leaf card rigid, and rigid is what makes it read as something being shoved aside.
  *
- * The vertex is carried along the push and shoved away from the centre at the same time, which is
- * what makes a body read as parting the leaves rather than dragging them sideways. What is left
- * after it passes is a ring: an oscillation whose phase runs outward from the centre, under an
- * exponential that takes it back to still. That decay is the whole illusion of a simulation, so
- * Damping is the knob that decides whether a plant is a stiff shrub or a loose sapling.
+ * Pivot has to be the plant's own pivot, and per instance. A bounds centre is not it: brushing a
+ * canopy happens below the middle of a tree's bounds, which is exactly where a weight taken from
+ * that centre is zero.
  *
- * Weighted by vertex colour red alone, which unpainted is white and so moves everything the sphere
- * reaches. No height term: the sphere is already the localisation, and a body brushing a canopy
- * stands below the middle of the plant's bounds, which is the one place a height weight taken from
- * ObjectPositionWS is zero. What keeps a trunk still is that a trunk is a different material.
+ * The angle is measured from the pivot rather than per vertex, because every vertex has to swing by
+ * the same amount or the mesh shears instead of leaning.
+ *
+ * Sphere is where the disturber is and how far it reaches. Push is its direction and how hard, 0 to
+ * 1, with the seconds since it stopped mattering in w. Two angles come out of that: a steady Bend
+ * away from it, and a Wobble ringing on top. The ring runs on Time rather than on the age, so it
+ * never jumps phase when a body stops or leaves - only its envelope moves, and Damping is what
+ * decides whether the plant is a stiff shrub or a loose sapling.
+ *
+ * Weight is vertex colour red. Unpainted it is white, and the whole plant swings rigidly about its
+ * base, which for a grass clump is already the right answer.
  */
-float3 MobRustle(float3 WorldPos, float4 Sphere, float4 Push, float Weight,
-	float Frequency, float Damping)
+float3 MobRustle(float3 WorldPos, float3 Pivot, float4 Sphere, float4 Push, float Weight,
+	float Time, float Bend, float Wobble, float Frequency, float Damping, float MaskFalloff)
 {
+	// Measured flat. How far up a plant somebody is standing has nothing to do with how far the
+	// plant leans, and taking Z would let a bird overhead flatten a hedge.
+	float3 Offset = Pivot - Sphere.xyz;
+	Offset.z = 0.0f;
+
+	const float Dist = length(Offset);
 	const float Reach = max(Sphere.w, MOB_EPS);
-	const float3 Delta = WorldPos - Sphere.xyz;
-	const float Dist = length(Delta);
 
-	// Squared so the edge of the sphere is a taper rather than a crease across the canopy.
+	// Squared so the edge of the sphere is a taper rather than a line across the grass.
 	float Falloff = saturate(1.0f - Dist / Reach);
-	Falloff *= Falloff * saturate(Weight);
+	Falloff *= Falloff;
 
-	// Nothing survives the falloff, so the rest of the maths is only worth doing inside the sphere.
-	if (Falloff <= 0.0f)
+	const float Mask = pow(saturate(Weight), max(MaskFalloff, MOB_EPS));
+	if (Falloff * Mask <= 0.0f)
 	{
 		return float3(0.0f, 0.0f, 0.0f);
 	}
 
+	const float Force = saturate(length(Push.xyz));
 	const float Age = max(Push.w, 0.0f);
 	const float Envelope = exp(-Age * max(Damping, 0.0f));
 
-	const float3 Away = Delta / max(Dist, MOB_EPS);
-	const float3 Shove = Push.xyz + Away * length(Push.xyz) * 0.5f;
+	// Which way it gets tipped. Standing exactly on the pivot has no direction to offer, so the
+	// disturber's own heading stands in.
+	const float3 Away = Dist > MOB_EPS ? Offset / Dist : normalize(float3(Push.xy, 0.0f) + float3(MOB_EPS, 0.0f, 0.0f));
+	const float3 Axis = cross(float3(0.0f, 0.0f, 1.0f), Away);
 
-	// Metres rather than centimetres, so one wavelength is about a plant and not about a leaf.
-	const float Ring = sin(Age * Frequency - Dist * 0.01f * Frequency);
+	// From the pivot, so two plants side by side never ring together.
+	const float Phase = dot(Pivot, float3(0.031f, 0.047f, 0.0f));
+	const float Ring = sin(Time * Frequency + Phase);
 
-	return Shove * Falloff * Envelope * (0.6f + 0.4f * Ring);
+	const float Angle = radians((Bend + Wobble * Ring) * Force * Falloff * Envelope * Mask);
+
+	const float3 P = WorldPos - Pivot;
+	float S, C;
+	sincos(Angle, S, C);
+	return (P * C + cross(Axis, P) * S + Axis * dot(Axis, P) * (1.0f - C)) - P;
 }
 
 // ---------------------------------------------------------------------------

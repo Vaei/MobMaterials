@@ -33,6 +33,9 @@ struct FMobRustleSlot
 	/** Seconds an unowned slot has left before it is free again. Unused while owned. */
 	float Remaining = 0.f;
 
+	/** What the push is scaled by on its way out, so a slot never leaves with anything still in it. */
+	float Fade = 1.f;
+
 	bool IsEmpty() const { return Radius <= 0.f; }
 };
 

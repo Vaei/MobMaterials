@@ -41,6 +41,8 @@ public class MobMaterialsEditor : ModuleRules
 				"Json",
 				"AppFramework",
 				"ToolWidgets",
+				"MeshDescription",
+				"StaticMeshDescription",
 			}
 			);
 	}

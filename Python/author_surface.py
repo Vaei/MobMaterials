@@ -763,7 +763,8 @@ float3 Offset = 0.0f;
 %s
 return Offset;
 """ % '\n'.join(
-    'Offset += MobRustle(WorldPos, Sphere%d, Push%d, Weight, Frequency, Damping);' % (i, i)
+    'Offset += MobRustle(WorldPos, Pivot, Sphere%d, Push%d, Weight, Time, Bend, Wobble, '
+    'Frequency, Damping, MaskFalloff);' % (i, i)
     for i in range(RUSTLE_SLOTS))
 
 _CODE_TRANSMISSION = """
@@ -776,14 +777,50 @@ RUSTLE_DESC = (
     'Off, the term compiles away entirely, so a plant nobody can reach costs nothing for it.'
 )
 
+# The two UV channels Bake Foliage Pivots writes: XY in the first, Z and the stiffness in the next.
+RUSTLE_PIVOT_UV = 1
+
+_CODE_LEAF_PIVOT = """
+return float3(PivotXY.x, PivotXY.y, PivotZW.x);
+"""
+
+RUSTLE_PER_LEAF_DESC = (
+    'Swings each leaf about its own stem instead of swinging the whole plant about its base.\n\n'
+    'Needs the mesh to have been through Mat > Bake Foliage Pivots, which writes the pivots into '
+    'UV1 and UV2 and the stiffness into vertex colour red. On an unbaked mesh those channels hold '
+    'nothing and the plant collapses towards its origin, so this is off until a mesh has been '
+    'baked.\n\n'
+    'Leave it off for grass and any other clump that should move as one piece: swinging about the '
+    'instance pivot is both right and cheaper there.'
+)
+
+RUSTLE_BEND_DESC = (
+    'How far the plant tips away from whoever is in it, in degrees, at full force.\n\n'
+    'The steady part of the lean. This is the one to reach for first: it is what parting reads as, '
+    'and the wobble on top of it is only decoration.'
+)
+
+RUSTLE_WOBBLE_DESC = (
+    'How far the plant swings either side of that lean, in degrees.\n\n'
+    'Past about half the bend it stops reading as a plant recovering and starts reading as a plant '
+    'flapping.'
+)
+
 RUSTLE_FREQUENCY_DESC = (
-    'How fast the plant rings after something has gone through it, in radians a second. Low reads '
-    'as a heavy branch, high as a light leaf.'
+    'How fast it swings, in radians a second. Low is a heavy branch, high is a light blade.'
 )
 
 RUSTLE_DAMPING_DESC = (
-    'How quickly the ringing dies. This is what separates a stiff shrub from a loose sapling: high '
-    'and the plant is back to still almost at once, low and it goes on nodding.'
+    'How quickly the swing dies once whoever caused it has stopped or gone.\n\n'
+    'A stiff shrub against a loose sapling. Around 3 settles in about a second; below 1 the plant '
+    'goes on nodding for several.'
+)
+
+RUSTLE_MASK_DESC = (
+    'How sharply vertex colour red decides which part of the plant gives.\n\n'
+    'Above 1 keeps the base stiffer and moves the weight of the swing into the tips. Unpainted '
+    'geometry is white whatever this says, so the whole plant swings rigidly about its pivot, which '
+    'for a grass clump is already right.'
 )
 
 TRANSMISSION_AMOUNT_DESC = (
@@ -1456,6 +1493,13 @@ def build_master_material():
         mat.set_editor_property('blend_mode', unreal.BlendMode.BLEND_MASKED)
         mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_TWO_SIDED_FOLIAGE)
         mat.set_editor_property('two_sided', True)
+
+        # A leaf gets used as a particle and as an instance as readily as it gets planted. Without
+        # the usage flag the material has no shader for that path and renders as flicker rather than
+        # as an error.
+        mat.set_editor_property('used_with_niagara_mesh_particles', True)
+        mat.set_editor_property('used_with_niagara_sprites', True)
+        mat.set_editor_property('used_with_instanced_static_meshes', True)
     else:
         mat.set_editor_property('blend_mode', unreal.BlendMode.BLEND_OPAQUE)
         mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
@@ -1894,15 +1938,49 @@ def build_master_material():
                     rustle_inputs.append((pin, node))
 
             rustle = custom(mat, _CODE_RUSTLE, CMOT.CMOT_FLOAT3,
-                            ['WorldPos', 'Weight', 'Frequency', 'Damping']
+                            ['WorldPos', 'Pivot', 'Weight', 'Time', 'Bend', 'Wobble',
+                             'Frequency', 'Damping', 'MaskFalloff']
                             + [name for name, _ in rustle_inputs],
                             [], -600, 1900, 'Rustle')
             link(worldpos, '', rustle, 'WorldPos')
             link(vcol, 'R', rustle, 'Weight')
-            link(_param_scalar(mat, 'RustleFrequency', 9.0, GROUP_FOLIAGE, -1200, 1750, 20,
-                               desc=RUSTLE_FREQUENCY_DESC), '', rustle, 'Frequency')
-            link(_param_scalar(mat, 'RustleDamping', 2.2, GROUP_FOLIAGE, -1200, 1800, 21,
-                               desc=RUSTLE_DAMPING_DESC), '', rustle, 'Damping')
+            link(time_node, '', rustle, 'Time')
+
+            # Where the plant swings about. The instance's own pivot for a clump that moves as one,
+            # or the baked per-leaf pivot for anything whose leaves should move separately. Object
+            # position is neither: it is the bounds centre, halfway up the plant.
+            object_pivot = _fn_call(
+                mat, '/Engine/Functions/Engine_MaterialFunctions02/WorldPositionOffset/ObjectPivotPoint',
+                -1200, 1700)
+
+            leaf_pivot = custom(mat, _CODE_LEAF_PIVOT, CMOT.CMOT_FLOAT3, ['PivotXY', 'PivotZW'],
+                                [], -900, 1620, 'Baked leaf pivot')
+            for pin, channel in (('PivotXY', RUSTLE_PIVOT_UV), ('PivotZW', RUSTLE_PIVOT_UV + 1)):
+                coord = _expr(mat, unreal.MaterialExpressionTextureCoordinate, -1200, 1560 + 40 * channel)
+                coord.set_editor_property('coordinate_index', channel)
+                link(coord, '', leaf_pivot, pin)
+
+            # Baked local, so it survives whatever transform the instance is placed with.
+            leaf_pivot_ws = _expr(mat, unreal.MaterialExpressionTransformPosition, -750, 1620)
+            leaf_pivot_ws.set_editor_property(
+                'transform_source_type',
+                unreal.MaterialPositionTransformSource.TRANSFORMPOSSOURCE_LOCAL)
+            leaf_pivot_ws.set_editor_property(
+                'transform_type', unreal.MaterialPositionTransformSource.TRANSFORMPOSSOURCE_WORLD)
+            link(leaf_pivot, '', leaf_pivot_ws, '')
+
+            link(_switch_param(mat, 'bRustlePerLeafPivot', leaf_pivot_ws, '', object_pivot, '',
+                               GROUP_FOLIAGE, -600, 1680, desc=RUSTLE_PER_LEAF_DESC),
+                 '', rustle, 'Pivot')
+
+            for name, default, sort, desc in (
+                    ('RustleBend', 24.0, 20, RUSTLE_BEND_DESC),
+                    ('RustleWobble', 12.0, 21, RUSTLE_WOBBLE_DESC),
+                    ('RustleFrequency', 7.0, 22, RUSTLE_FREQUENCY_DESC),
+                    ('RustleDamping', 0.8, 23, RUSTLE_DAMPING_DESC),
+                    ('RustleMaskFalloff', 1.0, 24, RUSTLE_MASK_DESC)):
+                link(_param_scalar(mat, name, default, GROUP_FOLIAGE, -1200, 1650 + sort * 30, sort,
+                                   desc=desc), '', rustle, name.replace('Rustle', ''))
             for name, node in rustle_inputs:
                 link(node, '', rustle, name)
 
@@ -2040,6 +2118,7 @@ _SWITCH_DEFAULTS = {
     'bWetness': False, 'bColorVariation': False, 'bMacroVariation': False, 'bEmissive': False,
     'bDetail': False, 'bPrimitiveData': False, 'bDebug': False,
     'bAccumulation': False, 'bRipples': False, 'bWind': False, 'bRustle': False,
+    'bRustlePerLeafPivot': False,
 }
 
 
@@ -2065,7 +2144,7 @@ def build_material_instances():
                 continue
             if switch == 'bWind' and not FOLIAGE:
                 continue
-            if switch == 'bRustle' and not (FOLIAGE and INCLUDE_RUSTLE):
+            if switch in ('bRustle', 'bRustlePerLeafPivot') and not (FOLIAGE and INCLUDE_RUSTLE):
                 continue
             MEL.set_material_instance_static_switch_parameter_value(
                 mi, switch, bool(overrides.get(switch, default)))

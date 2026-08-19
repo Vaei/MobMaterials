@@ -217,6 +217,18 @@ float3 MobDebugView(int Mode, float3 Weights, float Cavity, float3 Normal, float
 	if (Mode == 7) { return float3(0.0f, saturate(Trample), 0.0f); }
 	if (Mode == 8) { return float3(0.0f, 0.0f, saturate(Accumulation)); }
 	if (Mode == 9) { return saturate(Transmission).xxx; }
+
+	// Green is a per-leaf random, so spinning it round the hue circle puts neighbouring leaves in
+	// unrelated colours. A ramp would leave two leaves with close randoms looking like one leaf.
+	if (Mode == 10)
+	{
+		const float H = frac(saturate(VertexColour.g) * 6.0f) * 6.0f;
+		const float3 Wrapped = abs(H - float3(3.0f, 2.0f, 4.0f));
+		return saturate(float3(Wrapped.x - 1.0f, 2.0f - Wrapped.y, 2.0f - Wrapped.z));
+	}
+
+	if (Mode == 11) { return saturate(VertexColour.r).xxx; }
+
 	return 0.0f.xxx;
 }
 

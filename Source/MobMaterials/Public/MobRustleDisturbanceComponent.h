@@ -34,17 +34,17 @@ public:
 	float Radius = 170.f;
 
 	/**
-	 * How far a plant is pushed by something barely moving through it. World units at the centre.
+	 * How hard something barely moving pushes, against the material's Rustle Bend.
 	 *
 	 * A body that stops entirely gives its slot up and the plant closes over it, so this is the
 	 * floor for a crawl rather than for standing still.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Rustle", meta=(UIMin="0", UIMax="50", ClampMin="0", ForceUnits="cm"))
-	float RestStrength = 4.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Rustle", meta=(UIMin="0", UIMax="1", ClampMin="0", ClampMax="1"))
+	float RestStrength = 0.2f;
 
-	/** How far it is pushed at ReferenceSpeed and beyond. This is what a sprint through a bush looks like. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Rustle", meta=(UIMin="0", UIMax="100", ClampMin="0", ForceUnits="cm"))
-	float MoveStrength = 22.f;
+	/** How hard it pushes at ReferenceSpeed and beyond. This is what a sprint through a bush looks like. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Rustle", meta=(UIMin="0", UIMax="1", ClampMin="0", ClampMax="1"))
+	float MoveStrength = 1.f;
 
 	/** World units per second at which the push has reached MoveStrength. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Rustle", meta=(UIMin="50", UIMax="1200", ClampMin="1", ForceUnits="cm/s"))

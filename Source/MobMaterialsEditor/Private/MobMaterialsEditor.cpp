@@ -3,6 +3,7 @@
 #include "MobMaterialsEditor.h"
 
 #include "MobChannelRemapWindow.h"
+#include "MobFoliagePivots.h"
 #include "MobLevelTools.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialInterface.h"
@@ -11,6 +12,7 @@
 #include "MobTrampleVolumeCustomization.h"
 #include "SMobLayerEditor.h"
 #include "MobMaterialsEditorUserSettings.h"
+#include "MobRustleSettings.h"
 #include "MobUVScaleWindow.h"
 #include "SMobGenerateWindow.h"
 
@@ -324,6 +326,20 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 		FUIAction(FExecuteAction::CreateStatic(&FMobSimplifyWindow::Open)));
 
 	Menu.AddMenuEntry(
+		LOCTEXT("BakeFoliagePivots", "Bake Foliage Pivots"),
+		LOCTEXT("BakeFoliagePivotsTip",
+			"Gives every leaf on the selected meshes its own pivot, so foliage swings about where it "
+			"grows from rather than about the whole plant's origin. Leaves are found as UV shells, "
+			"because a tree's leaves are welded to their twigs and there is only ever one piece of "
+			"geometry to find.\n\n"
+			"Look at Foliage Shells in the debug view afterwards: leaf-sized patches of colour mean "
+			"it worked, broad bands mean it did not, and nothing downstream of a wrong shell looks "
+			"wrong enough to notice on its own."),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.StaticMesh")),
+		FUIAction(FExecuteAction::CreateStatic(&UMobFoliagePivots::BakeSelection),
+			FCanExecuteAction::CreateStatic(&UMobFoliagePivots::CanBakeSelection)));
+
+	Menu.AddMenuEntry(
 		LOCTEXT("RemapChannels", "Remap Texture Channels..."),
 		LOCTEXT("RemapChannelsTip",
 			"Repacks incoming art into the HRC a landscape layer reads or the CRM a surface reads. "
@@ -407,6 +423,14 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 	Menu.EndSection();
 
 	Menu.BeginSection(TEXT("MobSettings"), LOCTEXT("SettingsSection", "Settings"));
+	Menu.AddMenuEntry(
+		LOCTEXT("RustleProjectSettings", "Project Settings: Rustle"),
+		LOCTEXT("RustleProjectSettingsTip",
+			"What foliage does when something walks through it. Opened at Mob Rustle rather than "
+			"wherever the settings window was last."),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Settings")),
+		FUIAction(FExecuteAction::CreateStatic(&FMobMaterialsEditorModule::OpenRustleProjectSettings)));
+
 	Menu.AddMenuEntry(
 		LOCTEXT("EditorSettings", "Editor Preferences"),
 		LOCTEXT("EditorSettingsTip", "Per-developer settings for this plugin. Not checked in."),
@@ -588,15 +612,38 @@ void FMobMaterialsEditorModule::HideToolbarMenu()
 	Settings->SaveConfig();
 }
 
+namespace
+{
+	/**
+	 * Opens the settings window on one particular section.
+	 *
+	 * Asked of the settings object rather than spelled out. A section is registered under the class
+	 * name, not the display name, so naming it by hand opens the window on whatever was last shown -
+	 * which reads as the menu entry doing nothing.
+	 */
+	void ShowSettingsFor(const UDeveloperSettings* Settings)
+	{
+		if (!Settings)
+		{
+			return;
+		}
+
+		if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>(TEXT("Settings")))
+		{
+			SettingsModule->ShowViewer(Settings->GetContainerName(), Settings->GetCategoryName(),
+				Settings->GetSectionName());
+		}
+	}
+}
+
 void FMobMaterialsEditorModule::OpenSettings()
 {
-	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>(TEXT("Settings")))
-	{
-		const UMobMaterialsEditorUserSettings* Settings =
-			GetDefault<UMobMaterialsEditorUserSettings>();
-		SettingsModule->ShowViewer(Settings->GetContainerName(), Settings->GetCategoryName(),
-			Settings->GetSectionName());
-	}
+	ShowSettingsFor(GetDefault<UMobMaterialsEditorUserSettings>());
+}
+
+void FMobMaterialsEditorModule::OpenRustleProjectSettings()
+{
+	ShowSettingsFor(GetDefault<UMobRustleSettings>());
 }
 
 bool FMobMaterialsEditorModule::WeatherCollectionExists(FSoftObjectPath Path)

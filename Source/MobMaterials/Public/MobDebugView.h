@@ -47,4 +47,19 @@ enum class EMobDebugView : uint8
 	 * black everywhere else, where that channel is metallic instead.
 	 */
 	Transmission = 9,
+
+	/**
+	 * Every leaf in its own colour, from the per-leaf random in vertex colour green.
+	 *
+	 * The first thing to look at after baking pivots, and the only way to see whether the leaves
+	 * were separated correctly. A canopy that comes out in broad bands rather than leaf-sized
+	 * patches means the shells are wrong, and everything downstream of that is quietly mush.
+	 */
+	FoliageShells = 10 UMETA(DisplayName = "Foliage Shells"),
+
+	/**
+	 * How freely each part of a leaf swings, from vertex colour red. Black at the stem, white at
+	 * the tip.
+	 */
+	FoliageStiffness = 11 UMETA(DisplayName = "Foliage Stiffness"),
 };

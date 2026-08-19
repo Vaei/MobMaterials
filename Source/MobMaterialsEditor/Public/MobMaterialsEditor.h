@@ -55,6 +55,9 @@ private:
 	static void HideToolbarMenu();
 	static void OpenSettings();
 
+	/** Opens the settings window at Mob Rustle, rather than wherever it was last. */
+	static void OpenRustleProjectSettings();
+
 	/** Opens a weather collection so its wetness can be scrubbed without hunting for the asset. */
 	static void OpenWeatherCollection(FSoftObjectPath Path);
 
