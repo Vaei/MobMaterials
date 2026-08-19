@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "1.0.0",
 	"FriendlyName": "MobMaterials",
-	"Description": "Landscape and surface master materials for the mobile forward renderer. Layer blending, vertex paint, triplanar, wetness, colour variation and emissive, each gated so an unused feature costs nothing.",
+	"Description": "Landscape and surface master materials for the mobile forward renderer. Layer blending, vertex paint, triplanar, wetness, colour variation and emissive.",
 	"Category": "Rendering",
 	"CreatedBy": "Jared Taylor (Vaei)",
 	"CreatedByURL": "",

@@ -48,7 +48,11 @@ Or open [`docs/index.html`](docs/index.html) from a clone - it is a static site 
 * [Forward Render Helper Plugin](https://github.com/Vaei/ForwardRender)
   * Replaces Hotpatch Module in Perf Maxing guide above
 * [MobLights Plugin](https://github.com/Vaei/MobLights)
-  * Local lights for a renderer that has none, and fog to put them in
+  * Local lights for the mobile forward rendering path, and fog to put them in
+* [MobFort Plugin](https://github.com/Vaei/MobFort)
+  * Stylized unlit character masters for the same renderer. These materials are the world those characters stand in
+* [MobWater Plugin](https://github.com/Vaei/MobWater)
+  * Ponds, lakes, rivers and ocean on the same renderer, that characters wade and swim in
 
 ## Features
 
