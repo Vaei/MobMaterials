@@ -25,6 +25,8 @@ import sys
 
 import unreal
 
+import mob_version
+
 MEL = unreal.MaterialEditingLibrary
 EAL = unreal.EditorAssetLibrary
 
@@ -187,7 +189,10 @@ def _fnexpr(fn, cls, x, y):
 
 def _spread(exprs):
     columns = sorted({e.get_editor_property('material_expression_editor_x') for e in exprs})
-    placement = {x: i * COLUMN_PITCH for i, x in enumerate(columns)}
+    # Left of the origin: the material's own output node sits at zero and cannot be moved, so
+    # numbering columns from zero upwards puts the whole graph to the right of what it feeds.
+    count = len(columns)
+    placement = {x: (i - count) * COLUMN_PITCH for i, x in enumerate(columns)}
     for e in exprs:
         e.set_editor_property('material_expression_editor_x',
                               placement[e.get_editor_property('material_expression_editor_x')])

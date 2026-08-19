@@ -23,6 +23,8 @@ import sys
 
 import unreal
 
+import mob_version
+
 MEL = unreal.MaterialEditingLibrary
 EAL = unreal.EditorAssetLibrary
 
@@ -161,6 +163,7 @@ def get_or_create_material(package_path, name):
 
 
 def save(asset):
+    mob_version.stamp(asset)
     EAL.save_loaded_asset(asset, only_if_is_dirty=False)
 
 
@@ -2497,6 +2500,7 @@ def wire_rvt(recipe=None, expand=0.0):
     import mob_recipe
     import importlib as _il
     _il.reload(mob_recipe)
+    _il.reload(mob_version)
     mob_recipe.apply_landscape(sys.modules[__name__], mob_recipe.load(recipe))
 
     if not BUILD_PROJECT_OUTPUTS:
@@ -2810,6 +2814,7 @@ def build_all(recipe=None):
     import mob_recipe
     import importlib as _il
     _il.reload(mob_recipe)
+    _il.reload(mob_version)
     me = sys.modules[__name__]
     recipe = mob_recipe.load(recipe)
     mob_recipe.apply_landscape(me, recipe)

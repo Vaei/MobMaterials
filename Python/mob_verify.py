@@ -16,7 +16,11 @@ and the engine's BRDF lookup - so these are baselines to hold steady, not ground
 moves, dump the shader and count before believing the stat.
 """
 
+import importlib
+
 import unreal
+
+import mob_version
 
 MEL = unreal.MaterialEditingLibrary
 EAL = unreal.EditorAssetLibrary
@@ -285,6 +289,15 @@ def run(recipe):
                     on['samplers'] == off['samplers'] and on['tex'] == off['tex'],
                     'tex %s -> %s, samplers %s -> %s'
                     % (off['tex'], on['tex'], off['samplers'], on['samplers']))
+
+    # Everything above compares the master against itself, so it passes just as happily on content
+    # an older plugin built. This is the only check that can tell that apart. The recipe's own
+    # master is demanded by path because it lives wherever the recipe points, not under the plugin.
+    importlib.reload(mob_version)
+    master = mat.get_path_name().split('.')[0]
+    _log('version %s' % mob_version.plugin_version())
+    for failure in mob_version.check([master], required=[master]) + mob_version.check():
+        r.check(failure, False)
 
     _log('%d passed, %d failed' % (r.passed, len(r.failed)))
     for f in r.failed:
