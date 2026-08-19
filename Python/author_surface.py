@@ -164,6 +164,7 @@ def get_or_create_material(package_path, name):
 
 
 def save(asset):
+    mob_version.stamp(asset)
     EAL.save_loaded_asset(asset, only_if_is_dirty=False)
 
 
@@ -2223,6 +2224,7 @@ def build_all(recipe=None):
     import mob_recipe
     import importlib as _il
     _il.reload(mob_recipe)
+    _il.reload(mob_version)
     me = sys.modules[__name__]
     recipe = mob_recipe.load(recipe)
     mob_recipe.apply_surface(me, recipe)

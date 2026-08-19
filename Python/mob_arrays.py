@@ -142,7 +142,9 @@ def pack(recipe=None):
             _log('%s: pack failed, see the log above for which slice' % channel)
             continue
 
-        unreal.EditorAssetLibrary.save_asset(path, only_if_is_dirty=False)
+        # The packed array itself, not its path: saving by path reloads the package to find what to
+        # save, which is a load nobody asked for around an asset that was just built in memory.
+        unreal.EditorAssetLibrary.save_loaded_asset(array, only_if_is_dirty=False)
         built[channel] = path
         _log('%s: %d slice(s) -> %s' % (channel, len(slices), path))
 
