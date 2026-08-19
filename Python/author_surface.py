@@ -54,6 +54,10 @@ WEATHER_MPC = '/MobMaterials/MPC_MobWeather'
 WEATHER_PARAM = 'Wetness'
 SNOW_PARAM = 'Snow'
 
+# How far round the sky is turned. Written by whatever owns the sky sphere - MobWorld does, when a
+# project has it - so a surface and a character reflect the same sky facing the same way.
+SKY_YAW_PARAM = 'SkyYaw'
+
 # Written by AMobTrampleVolume at runtime, which is what lets one render target be read without a
 # dynamic material instance anywhere in the chain. The landscape builder authors the collection.
 TRAMPLE_MPC = '/MobMaterials/MPC_MobTrample'
@@ -1182,7 +1186,8 @@ def ensure_weather_parameters():
     existing = list(mpc.get_editor_property('scalar_parameters'))
     names = [str(p.get_editor_property('parameter_name')) for p in existing]
     added = []
-    for name, default in ((WEATHER_PARAM, 0.0), ('PuddleAmount', 1.0), (SNOW_PARAM, 0.0)):
+    for name, default in ((WEATHER_PARAM, 0.0), ('PuddleAmount', 1.0), (SNOW_PARAM, 0.0),
+                          (SKY_YAW_PARAM, 0.0)):
         if name in names:
             continue
         p = unreal.CollectionScalarParameter()
@@ -1373,6 +1378,12 @@ def _switch_param(mat, name, true_src, true_out, false_src, false_out, group, x,
 GROUP_GLOBAL = '00 - Global'
 GROUP_BLEND = '10 - Blending'
 GROUP_WETNESS = '30 - Wetness'
+GROUP_SKY = '35 - Sky'
+
+_CODE_SKY_REFLECTION = """
+return MobSkyReflection(Panorama, PanoramaSampler, WorldNormal, CameraVector, Roughness, MaxMip,
+                        SkyYaw, Strength);
+"""
 GROUP_ACCUM = '35 - Accumulation'
 GROUP_TRAMPLE = '37 - Trample'
 GROUP_VARIATION = '40 - Variation'
@@ -2055,11 +2066,55 @@ def build_master_material():
                                      500, 800, desc=DEBUG_SWITCH_DESC)
         emissive_out = ''
 
+    # --- sky reflection ---------------------------------------------------
+    # Off by default. On, a surface reflects the same panorama an unlit character does, which is the
+    # only way the two agree: a wall reflecting a captured probe beside a character reflecting the
+    # sky is a mismatch nothing on screen explains.
+    sky_pano = _param_texture(mat, 'SkyPanorama', BASE_TEX_BC, GROUP_SKY, -1250, 1400, 0)
+    sky_pano.set_editor_property('sampler_type', ST.SAMPLERTYPE_LINEAR_COLOR)
+    sky_yaw = _expr(mat, unreal.MaterialExpressionCollectionParameter, -1250, 1460)
+    sky_yaw.set_editor_property('collection', unreal.load_asset(WEATHER_MPC))
+    sky_yaw.set_editor_property('parameter_name', SKY_YAW_PARAM)
+
+    sky = custom(mat, _CODE_SKY_REFLECTION, CMOT.CMOT_FLOAT3,
+                 ['Panorama', 'WorldNormal', 'CameraVector', 'Roughness', 'MaxMip', 'SkyYaw',
+                  'Strength'],
+                 [], -950, 1400, 'One panorama tap, the sky a character reflects.')
+    link(sky_pano, '', sky, 'Panorama')
+    link(_expr(mat, unreal.MaterialExpressionPixelNormalWS, -1250, 1520), '', sky, 'WorldNormal')
+    link(_expr(mat, unreal.MaterialExpressionCameraVectorWS, -1250, 1580), '', sky, 'CameraVector')
+    link(final, 'Roughness', sky, 'Roughness')
+    link(_param_scalar(mat, 'SkyMaxMip', 8.0, GROUP_SKY, -1250, 1640, 1), '', sky, 'MaxMip')
+    link(sky_yaw, '', sky, 'SkyYaw')
+    link(_param_scalar(mat, 'SkyStrength', 1.0, GROUP_SKY, -1250, 1700, 2), '', sky, 'Strength')
+
+    sky_added = _expr(mat, unreal.MaterialExpressionAdd, -700, 1400)
+    link(emissive_src, emissive_out, sky_added, 'A')
+    link(sky, '', sky_added, 'B')
+
+    emissive_src = _switch_param(mat, 'bSkyReflection', sky_added, '', emissive_src, emissive_out,
+                                 GROUP_SKY, -500, 1400, default=False, sort=90,
+                                 desc='Reflect the sky the characters reflect. Off, none of this '
+                                      'compiles and the surface costs what it did before.')
+    emissive_out = ''
+
+    # Separate from the switch above, because a project may want both responses: the engine's for
+    # the captures it has placed, and this for the sky. On by default when the reflection is on,
+    # since counting the sky twice is the mistake worth defaulting away from.
+    zero_spec = _expr(mat, unreal.MaterialExpressionConstant, -700, 1760)
+    zero_spec.set_editor_property('r', 0.0)
+    spec_src = _switch_param(mat, 'bSuppressEngineSpecular', zero_spec, '', final, 'Specular',
+                             GROUP_SKY, -500, 1760, default=True, sort=91,
+                             desc='Drive the engine specular to zero so the sky reflection is the '
+                                  'whole response. Off to keep both.')
+    spec_src = _switch_param(mat, 'bSkyReflection', spec_src, '', final, 'Specular',
+                             GROUP_SKY, -350, 1760, default=False, sort=92)
+
     # --- outputs ----------------------------------------------------------
     MEL.connect_material_property(base_src, base_out, MP.MP_BASE_COLOR)
     MEL.connect_material_property(final, 'Normal', MP.MP_NORMAL)
     MEL.connect_material_property(final, 'Roughness', MP.MP_ROUGHNESS)
-    MEL.connect_material_property(final, 'Specular', MP.MP_SPECULAR)
+    MEL.connect_material_property(spec_src, '', MP.MP_SPECULAR)
 
     # On a foliage master the blue channel is transmission, and a plant is not metal either way.
     if FOLIAGE:

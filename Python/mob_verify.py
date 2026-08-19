@@ -89,6 +89,65 @@ class _Result(object):
             _log('  FAIL  %s%s' % (claim, (' - ' + detail) if detail else ''))
 
 
+def check_sky_maths():
+    """Asserts MobMaterials' copy of the long/lat maths still matches MobFort's.
+
+    The two plugins deliberately do not depend on each other, so the panorama sampling is written
+    out twice. A difference between them is a wall and a character reflecting the same sky facing
+    different ways, which nothing on screen explains, so it is checked rather than trusted.
+
+    Skipped when MobFort is not installed, which is a project that has no second copy to drift from.
+    """
+    import os
+
+    plugin = unreal.Paths.project_plugins_dir()
+    fort = None
+    for root, _, files in os.walk(plugin):
+        if 'MobFortShading.ush' in files:
+            fort = os.path.join(root, 'MobFortShading.ush')
+            break
+
+    if fort is None:
+        _log('sky maths: MobFort not installed, nothing to compare')
+        return True
+
+    def body(path, name):
+        text = open(path, encoding='utf-8').read()
+        start = text.find(name)
+        if start < 0:
+            return None
+        start = text.find('{', start)
+        depth, i = 0, start
+        while i < len(text):
+            if text[i] == '{':
+                depth += 1
+            elif text[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        # Names differ by prefix and whitespace is not the contract; the arithmetic is.
+        return ''.join(text[start:i].split())
+
+    here = os.path.join(unreal.Paths.project_plugins_dir(),
+                        'Visuals/MobMaterials/Shaders/Public/MobSurface.ush')
+
+    mine = body(here, 'MobPanoramaUV')
+    theirs = body(fort, 'FortPanoramaUV')
+
+    if mine is None or theirs is None:
+        unreal.log_warning('[MobVerify] sky maths: could not find one of the functions')
+        return False
+
+    if mine != theirs:
+        unreal.log_warning('[MobVerify] sky maths: MobPanoramaUV and FortPanoramaUV have drifted. '
+                           'A surface and a character will reflect the sky facing different ways.')
+        return False
+
+    _log('sky maths: matches MobFort')
+    return True
+
+
 def run(recipe):
     """Asserts the contract for whatever a recipe authored. Returns True when all claims hold."""
     import mob_recipe

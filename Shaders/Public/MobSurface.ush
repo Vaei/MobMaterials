@@ -489,3 +489,49 @@ float3 MobDistanceClamp(float3 Normal, float Roughness, float PixelDepth,
 	OutRoughness = saturate(max(Roughness, RoughnessFloor * Fade));
 	return MobFlattenNormal(Normal, saturate(NormalFlatten * Fade));
 }
+
+// ---------------------------------------------------------------------------
+// Sky reflection
+// ---------------------------------------------------------------------------
+
+/**
+ * Long/lat coordinate for a direction, turned by the sky's yaw.
+ *
+ * DUPLICATED FROM MobFort. FortPanoramaUV in MobFortShading.ush is the same function, and the two
+ * have to agree to the degree or a character and the wall behind them reflect the same sky facing
+ * different ways - which reads as a bug in one of them rather than as two copies drifting.
+ *
+ * Copied rather than shared because a plugin dependency between the two is not wanted in either
+ * direction. mob_verify checks they still match whenever MobFort is installed alongside.
+ */
+float2 MobPanoramaUV(float3 Dir, float SkyYawDegrees)
+{
+	Dir = normalize(Dir);
+	return float2(atan2(Dir.y, Dir.x) * (0.5f / PI) + 0.5f + SkyYawDegrees * (1.0f / 360.0f),
+		acos(clamp(Dir.z, -1.0f, 1.0f)) / PI);
+}
+
+/** Roughness to mip. Square root, so the sharp end of the range gets more of the chain. */
+float MobRoughnessMip(float Roughness, float MaxMip)
+{
+	return sqrt(saturate(Roughness)) * max(MaxMip, 0.0f);
+}
+
+/**
+ * A surface reflecting the sky the characters reflect.
+ *
+ * One tap at a roughness-chosen mip, weighted the way a dielectric reflects: less as it roughens,
+ * and more at a grazing angle. There are no analytic highlights here; the sky is the whole of it.
+ */
+float3 MobSkyReflection(Texture2D Panorama, SamplerState PanoramaSampler, float3 WorldNormal,
+	float3 CameraVector, float Roughness, float MaxMip, float SkyYawDegrees, float Strength)
+{
+	const float3 R = reflect(-CameraVector, WorldNormal);
+	const float3 Env = Texture2DSampleLevel(Panorama, PanoramaSampler,
+		MobPanoramaUV(R, SkyYawDegrees), MobRoughnessMip(Roughness, MaxMip)).rgb;
+
+	const float NdotV = saturate(dot(WorldNormal, CameraVector));
+	const float Grazing = pow(1.0f - NdotV, 5.0f);
+
+	return Env * Strength * (1.0f - saturate(Roughness)) * (1.0f + Grazing);
+}
