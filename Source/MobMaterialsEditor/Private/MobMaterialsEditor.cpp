@@ -282,7 +282,10 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 			LOCTEXT("VerifyTip",
 				"Builds a scratch instance per feature and asserts what the documentation claims: what each "
 				"one costs in taps and samplers, that ambient occlusion is left alone, that the custom "
-				"primitive data indices have not moved."),
+				"primitive data indices have not moved. Results go to the Output Log.\n\n"
+				"It recompiles each master before measuring, so it also clears a stale one as a side "
+				"effect - but it does not save, so the stale shader is back next session. Recompile "
+				"Landscape Material is the one that sticks."),
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Check")),
 			FUIAction(FExecuteAction::CreateStatic(&FMobMaterialsEditorModule::VerifyAll)));
 
@@ -383,6 +386,20 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 		FUIAction(
 			FExecuteAction::CreateStatic(&FMobLevelTools::FitBoxToLandscape),
 			FCanExecuteAction::CreateStatic(&FMobLevelTools::CanFitBoxToLandscape)));
+
+	Menu.AddMenuEntry(
+		LOCTEXT("RecompileLandscape", "Recompile Landscape Material"),
+		Reason(LOCTEXT("RecompileLandscapeTip",
+			"Rebuilds the landscape master's shader and saves it. A master goes stale when a material "
+			"function it calls is rebuilt without it: the graph is right and the shader is the one "
+			"built against the old function, so the ground keeps rendering as it did before the "
+			"change with nothing to say why. Saving is what makes it stick - recompiling alone leaves "
+			"the stale shader on disk for the next session to load."),
+			&FMobLevelTools::RecompileReason),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Refresh")),
+		FUIAction(
+			FExecuteAction::CreateStatic(&FMobLevelTools::RecompileLandscapeMaterial),
+			FCanExecuteAction::CreateStatic(&FMobLevelTools::CanRecompileLandscapeMaterial)));
 
 	Menu.AddMenuEntry(
 		LOCTEXT("WireRVT", "Wire Landscape Runtime Virtual Textures"),

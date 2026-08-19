@@ -9,6 +9,7 @@
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
 #include "MaterialEditingLibrary.h"
+#include "Materials/Material.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Engine/Texture.h"
 #include "EngineUtils.h"
@@ -493,6 +494,53 @@ void FMobLevelTools::SnapToLandscapeCentre()
 			FText::AsNumber(Moved))
 		: LOCTEXT("SnapNothing", "Nothing moved: no landscape was found near the selection."),
 		Moved > 0);
+}
+
+bool FMobLevelTools::CanRecompileLandscapeMaterial()
+{
+	return Cast<UMaterial>(GetLandscapeMaster()) != nullptr;
+}
+
+FText FMobLevelTools::RecompileReason()
+{
+	if (!WorldHasLandscape())
+	{
+		return LOCTEXT("RecompileNoLandscape", "There is no landscape in this level.");
+	}
+
+	return CanRecompileLandscapeMaterial() ? FText::GetEmpty()
+		: LOCTEXT("RecompileNoMaster",
+			"The landscape's material has no master behind it to recompile.");
+}
+
+void FMobLevelTools::RecompileLandscapeMaterial()
+{
+	UMaterial* Master = Cast<UMaterial>(GetLandscapeMaster());
+	if (!Master)
+	{
+		return;
+	}
+
+	const TArray<FString> Errors = UMaterialEditingLibrary::RecompileMaterial(Master);
+	for (const FString& Error : Errors)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("MobMaterials: %s: %s"), *Master->GetName(), *Error);
+	}
+
+	// Without this the freshly built shader lives only in memory, and the stale one on disk is what
+	// the next session loads - which is the whole reason this is needed more than once.
+	const bool bSaved = UEditorLoadingAndSavingUtils::SavePackages({ Master->GetPackage() }, false);
+
+	NotifyLevelTool(Errors.Num() > 0
+		? FText::Format(LOCTEXT("RecompileErrors", "{0} recompiled with {1} error(s). See the Output Log."),
+			FText::FromString(Master->GetName()), FText::AsNumber(Errors.Num()))
+		: bSaved
+			? FText::Format(LOCTEXT("RecompileDone", "{0} recompiled and saved."),
+				FText::FromString(Master->GetName()))
+			: FText::Format(LOCTEXT("RecompileUnsaved",
+				"{0} recompiled, but could not be saved - check it out, or the stale shader comes "
+				"back next session."), FText::FromString(Master->GetName())),
+		Errors.Num() == 0 && bSaved);
 }
 
 bool FMobLevelTools::CanRebuildPhysicalMaterial()

@@ -35,6 +35,18 @@ public:
 	static bool CanRebuildPhysicalMaterial();
 
 	/**
+	 * Recompiles the master the landscape renders with, and saves it.
+	 *
+	 * A master goes stale when a material function it calls is rebuilt without it: the graph is
+	 * right and the shader is the one built against the old function, so the ground renders as it
+	 * did before the change and nothing about the material says so. Saving is the half that makes
+	 * it stick - recompiling alone leaves the stale shader on disk to come back next session.
+	 */
+	static void RecompileLandscapeMaterial();
+	static bool CanRecompileLandscapeMaterial();
+	static FText RecompileReason();
+
+	/**
 	 * Assigns the textures selected in the Content Browser to the landscape's material instance,
 	 * matched by name.
 	 *
