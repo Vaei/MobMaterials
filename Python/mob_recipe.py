@@ -10,6 +10,8 @@ from the Python console.
 
 import unreal
 
+import mob_hooks
+
 EAL = unreal.EditorAssetLibrary
 
 LANDSCAPE = 'Landscape'
@@ -113,6 +115,33 @@ def _apply_rustle(module, recipe):
     module.RECIPE = recipe
 
 
+def _apply_hooks(recipe):
+    """Project material functions spliced into the master as it is generated.
+
+    Read onto mob_hooks rather than onto the generator, because both generators splice them the
+    same way and neither owns the list.
+    """
+    mob_hooks.reset()
+    for entry in (recipe.get_editor_property('hooks') or []):
+        function = entry.get_editor_property('function')
+        if function is None:
+            continue
+        point = mob_hooks.point_from_enum(entry.get_editor_property('point'))
+        if point is None:
+            mob_hooks._log('hook %s: unknown point, skipped' % function.get_name())
+            continue
+        switch = str(entry.get_editor_property('switch_name') or '')
+        mob_hooks.HOOKS.append({
+            'function': function,
+            'point': point,
+            # An unset FName reads back as "None", which is a perfectly good parameter name and so
+            # cannot be told from one an artist typed by asking the string.
+            'switch': '' if switch in ('', 'None') else switch,
+            'switch_default': bool(entry.get_editor_property('switch_default')),
+            'switch_group': str(entry.get_editor_property('switch_group') or 'Project'),
+        })
+
+
 def _apply_common(module, recipe):
     root = _dir(recipe, 'output_path', module.ROOT)
     module.ROOT = root
@@ -130,10 +159,12 @@ def _apply_common(module, recipe):
 def apply_landscape(module, recipe):
     recipe = load(recipe)
     if recipe is None:
+        mob_hooks.reset()
         module._log('no recipe, using script defaults')
         return module
 
     _apply_common(module, recipe)
+    _apply_hooks(recipe)
 
     layers = recipe.get_editor_property('layers') or []
     parsed = []
@@ -182,10 +213,12 @@ def apply_landscape(module, recipe):
 def apply_surface(module, recipe):
     recipe = load(recipe)
     if recipe is None:
+        mob_hooks.reset()
         module._log('no recipe, using script defaults')
         return module
 
     _apply_common(module, recipe)
+    _apply_hooks(recipe)
 
     _apply_weather(module, recipe)
     _apply_trample(module, recipe)

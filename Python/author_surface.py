@@ -25,6 +25,7 @@ import sys
 
 import unreal
 
+import mob_hooks
 import mob_version
 
 MEL = unreal.MaterialEditingLibrary
@@ -1368,12 +1369,13 @@ def _fn_call(mat, function_path, x, y):
 
 
 def _switch_param(mat, name, true_src, true_out, false_src, false_out, group, x, y, default=False,
-                  desc=None):
+                  desc=None, sort=0):
     """A StaticSwitchParameter. Several may share a name; they all follow one toggle on the instance."""
     sw = _expr(mat, unreal.MaterialExpressionStaticSwitchParameter, x, y)
     sw.set_editor_property('parameter_name', name)
     sw.set_editor_property('default_value', bool(default))
     sw.set_editor_property('group', group)
+    sw.set_editor_property('sort_priority', sort)
     if desc:
         sw.set_editor_property('desc', desc)
     link(true_src, true_out, sw, 'True')
@@ -1584,9 +1586,21 @@ def build_master_material():
     link(_param_static_bool(mat, 'bLayer1', False, GROUP_BLEND, -1900, -500, 90), '', blend, 'bLayer1')
     link(_param_static_bool(mat, 'bLayer2', False, GROUP_BLEND, -1900, -450, 91), '', blend, 'bLayer2')
 
+    # --- hook signals -----------------------------------------------------
+    # What a project's own material functions may read and replace, carried down the chain so a
+    # function spliced in at one point is seen by everything after it. See EMobMaterialHookPoint.
+    sig = {'UV': (uv, ''), 'WorldPosition': (worldpos, ''), 'WorldNormal': (worldnormal, ''),
+           'ObjectPosition': (objectpos, ''), 'PixelDepth': (depth, ''), 'VertexColor': (vcol, ''),
+           'CameraVector': (camera, ''),
+           'BaseColor': (blend, 'BaseColor'), 'Normal': (blend, 'Normal'),
+           'Roughness': (blend, 'Roughness'), 'Metallic': (blend, 'Metallic'),
+           'Cavity': (blend, 'Cavity'), 'Height': (blend, 'Height'),
+           'Weights': (blend, 'Weights')}
+    sig = mob_hooks.apply(mat, mob_hooks.LAYERS, sig, -1400, -1600)
+
     # --- colour variation -------------------------------------------------
     variation = _fn_call(mat, FN_ROOT + '/MF_MobColorVariation', -1100, -600)
-    link(blend, 'BaseColor', variation, 'BaseColor')
+    link(*sig['BaseColor'], variation, 'BaseColor')
     link(objectpos, '', variation, 'ObjectPos')
     link(worldpos, '', variation, 'WorldPos')
     link(_param_texture(mat, 'MacroNoiseTexture', BASE_TEX_NOISE, GROUP_VARIATION, -1400, -600, 0),
@@ -1616,7 +1630,7 @@ def build_master_material():
     # Sits between variation and wetness so an instance can be told to be wetter, and so its tint
     # multiplies whatever the layers and the variation already decided.
     colour_src, colour_out = variation, 'BaseColor'
-    rough_src, rough_out = blend, 'Roughness'
+    rough_src, rough_out = sig['Roughness']
     wet_local_src, wet_local_out = None, ''
 
     if INCLUDE_PRIMITIVE_DATA:
@@ -1643,7 +1657,7 @@ def build_master_material():
                       [('OutRoughness', CMOT.CMOT_FLOAT1), ('OutWetness', CMOT.CMOT_FLOAT1)],
                       -950, -300, 'Per-instance overrides')
         link(variation, 'BaseColor', prim, 'BaseColor')
-        link(blend, 'Roughness', prim, 'Roughness')
+        link(*sig['Roughness'], prim, 'Roughness')
         link(local_wet, '', prim, 'Wetness')
         link(tint, '', prim, 'Tint')
         link(rough_offset, '', prim, 'RoughnessOffset')
@@ -1653,7 +1667,8 @@ def build_master_material():
 
         sw_colour = _switch_param(mat, 'bPrimitiveData', prim, '', variation, 'BaseColor',
                                   GROUP_PRIMITIVE, -800, -360)
-        sw_rough = _switch_param(mat, 'bPrimitiveData', prim, 'OutRoughness', blend, 'Roughness',
+        sw_rough = _switch_param(mat, 'bPrimitiveData', prim, 'OutRoughness',
+                                 sig['Roughness'][0], sig['Roughness'][1],
                                  GROUP_PRIMITIVE, -800, -300)
         sw_wet = _switch_param(mat, 'bPrimitiveData', prim, 'OutWetness', local_wet, '',
                                GROUP_PRIMITIVE, -800, -240)
@@ -1661,12 +1676,18 @@ def build_master_material():
         rough_src, rough_out = sw_rough, ''
         wet_local_src, wet_local_out = sw_wet, ''
 
+    sig['BaseColor'] = (colour_src, colour_out)
+    sig['Roughness'] = (rough_src, rough_out)
+    sig = mob_hooks.apply(mat, mob_hooks.INSTANCE, sig, -750, -1600)
+    colour_src, colour_out = sig['BaseColor']
+    rough_src, rough_out = sig['Roughness']
+
     wet = _fn_call(mat, FN_ROOT + '/MF_MobSurfaceWetness', -600, -600)
     link(colour_src, colour_out, wet, 'BaseColor')
-    link(blend, 'Normal', wet, 'Normal')
+    link(*sig['Normal'], wet, 'Normal')
     link(rough_src, rough_out, wet, 'Roughness')
     link(_param_scalar(mat, 'Specular', 0.5, GROUP_GLOBAL, -900, -900, 0), '', wet, 'Specular')
-    link(blend, 'Cavity', wet, 'Cavity')
+    link(*sig['Cavity'], wet, 'Cavity')
     link(normal_z, '', wet, 'WorldNormalZ')
     link(weather, '', wet, 'Amount')
     link(wet_paint, '', wet, 'PaintWeight')
@@ -1799,7 +1820,7 @@ def build_master_material():
         link(shaded_normal, shaded_normal_out, acc, 'Normal')
         link(shaded_rough, shaded_rough_out, acc, 'Roughness')
         link(normal_z, '', acc, 'WorldNormalZ')
-        link(blend, 'Cavity', acc, 'Cavity')
+        link(*sig['Cavity'], acc, 'Cavity')
         link(_param_scalar(mat, 'Accumulation_Noise', 0.5, GROUP_ACCUM, -600, 700, 5),
              '', acc, 'Noise')
         link(_param_vector(mat, 'Accumulation_Colour', (0.86, 0.89, 0.94), GROUP_ACCUM, -600, 600, 0),
@@ -1857,13 +1878,25 @@ def build_master_material():
                                      shaded_rough_out, GROUP_TRAMPLE, 400, 1020)
         shaded_colour_out = shaded_normal_out = shaded_rough_out = ''
 
+    # --- weather hooks ----------------------------------------------------
+    sig['BaseColor'] = (shaded_colour, shaded_colour_out)
+    sig['Normal'] = (shaded_normal, shaded_normal_out)
+    sig['Roughness'] = (shaded_rough, shaded_rough_out)
+    sig['Specular'] = (wet, 'Specular')
+    sig['Wetness'] = (wet, 'Mask')
+    sig['Puddle'] = (wet, 'Puddle')
+    sig = mob_hooks.apply(mat, mob_hooks.WEATHER, sig, 500, 1400)
+    shaded_colour, shaded_colour_out = sig['BaseColor']
+    shaded_normal, shaded_normal_out = sig['Normal']
+    shaded_rough, shaded_rough_out = sig['Roughness']
+
     # --- finalise ---------------------------------------------------------
     final = _fn_call(mat, FN_ROOT + '/MF_MobSurfaceFinalise', 0, -600)
     link(shaded_colour, shaded_colour_out, final, 'BaseColor')
     link(shaded_normal, shaded_normal_out, final, 'Normal')
     link(shaded_rough, shaded_rough_out, final, 'Roughness')
-    link(wet, 'Specular', final, 'Specular')
-    link(blend, 'Cavity', final, 'Cavity')
+    link(*sig['Specular'], final, 'Specular')
+    link(*sig['Cavity'], final, 'Cavity')
     link(vertex_shade, '', final, 'VertexShade')
     link(depth, '', final, 'PixelDepth')
 
@@ -1907,6 +1940,13 @@ def build_master_material():
     link(_param_static_bool(mat, 'bEmissive', False, GROUP_EMISSIVE, -300, 380, 90),
          '', emissive, 'bEnabled')
 
+    # --- shading hooks ----------------------------------------------------
+    sig['BaseColor'] = (final, 'BaseColor')
+    sig['Normal'] = (final, 'Normal')
+    sig['Roughness'] = (final, 'Roughness')
+    sig['Specular'] = (final, 'Specular')
+    sig = mob_hooks.apply(mat, mob_hooks.SHADING, sig, 500, -1600)
+
     # --- opacity mask -----------------------------------------------------
     # Only compiled when an instance overrides the blend mode to Masked, so this needs no switch of
     # its own; an opaque instance never reads the pin.
@@ -1919,6 +1959,8 @@ def build_master_material():
     link(uv, '', mask_tex, 'UVs')
 
     # --- foliage ----------------------------------------------------------
+    # Only a foliage master moves its vertices on its own. A hook may still displace either kind.
+    wind_wpo = None
     if FOLIAGE:
         time_node = _expr(mat, unreal.MaterialExpressionTime, -1000, 1200)
         wind = custom(mat, _CODE_WIND, CMOT.CMOT_FLOAT3,
@@ -2011,7 +2053,7 @@ def build_master_material():
             link(gate, '', wpo, 'A')
             link(rustle_gate, '', wpo, 'B')
 
-        MEL.connect_material_property(wpo, wpo_out, MP.MP_WORLD_POSITION_OFFSET)
+        wind_wpo = (wpo, wpo_out)
 
         # Two-sided foliage reads this as the colour of light coming through a leaf.
         sss_color = _param_vector(mat, 'SubsurfaceColor', (0.15, 0.35, 0.08), GROUP_FOLIAGE,
@@ -2032,8 +2074,21 @@ def build_master_material():
 
         MEL.connect_material_property(sss, '', MP.MP_SUBSURFACE_COLOR)
 
+    # --- world position offset hooks --------------------------------------
+    # Added rather than replacing, so a project's own displacement stacks with the wind instead of
+    # taking a foliage master's movement away with it.
+    hooked = mob_hooks.apply(mat, mob_hooks.WPO, sig, 700, 2400).get('WorldPositionOffset')
+    if hooked is not None and wind_wpo is not None:
+        total = _expr(mat, unreal.MaterialExpressionAdd, 900, 2400)
+        link(wind_wpo[0], wind_wpo[1], total, 'A')
+        link(hooked[0], hooked[1], total, 'B')
+        hooked = (total, '')
+    offset = hooked or wind_wpo
+    if offset is not None:
+        MEL.connect_material_property(offset[0], offset[1], MP.MP_WORLD_POSITION_OFFSET)
+
     # --- debug ------------------------------------------------------------
-    base_src, base_out = final, 'BaseColor'
+    base_src, base_out = sig['BaseColor']
     emissive_src, emissive_out = emissive, 'Emissive'
 
     if INCLUDE_DEBUG:
@@ -2065,7 +2120,8 @@ def build_master_material():
 
         # Sent to emissive and the base colour blacked out, so what you see is the value itself
         # rather than the value times whatever the light happened to be doing.
-        base_src = _switch_param(mat, 'bDebug', black, '', final, 'BaseColor', GROUP_DEBUG, 500, 900,
+        base_src = _switch_param(mat, 'bDebug', black, '', sig['BaseColor'][0],
+                                 sig['BaseColor'][1], GROUP_DEBUG, 500, 900,
                                  desc=DEBUG_SWITCH_DESC)
         base_out = ''
         emissive_src = _switch_param(mat, 'bDebug', dbg, '', emissive, 'Emissive', GROUP_DEBUG,
@@ -2089,7 +2145,7 @@ def build_master_material():
     link(sky_pano, '', sky, 'Panorama')
     link(_expr(mat, unreal.MaterialExpressionPixelNormalWS, -1250, 1520), '', sky, 'WorldNormal')
     link(_expr(mat, unreal.MaterialExpressionCameraVectorWS, -1250, 1580), '', sky, 'CameraVector')
-    link(final, 'Roughness', sky, 'Roughness')
+    link(*sig['Roughness'], sky, 'Roughness')
     link(_param_scalar(mat, 'SkyMaxMip', 8.0, GROUP_SKY, -1250, 1640, 1), '', sky, 'MaxMip')
     link(sky_yaw, '', sky, 'SkyYaw')
     link(_param_scalar(mat, 'SkyStrength', 1.0, GROUP_SKY, -1250, 1700, 2), '', sky, 'Strength')
@@ -2109,28 +2165,39 @@ def build_master_material():
     # since counting the sky twice is the mistake worth defaulting away from.
     zero_spec = _expr(mat, unreal.MaterialExpressionConstant, -700, 1760)
     zero_spec.set_editor_property('r', 0.0)
-    spec_src = _switch_param(mat, 'bSuppressEngineSpecular', zero_spec, '', final, 'Specular',
+    spec_src = _switch_param(mat, 'bSuppressEngineSpecular', zero_spec, '',
+                             sig['Specular'][0], sig['Specular'][1],
                              GROUP_SKY, -500, 1760, default=True, sort=91,
                              desc='Drive the engine specular to zero so the sky reflection is the '
                                   'whole response. Off to keep both.')
-    spec_src = _switch_param(mat, 'bSkyReflection', spec_src, '', final, 'Specular',
+    spec_src = _switch_param(mat, 'bSkyReflection', spec_src, '',
+                             sig['Specular'][0], sig['Specular'][1],
                              GROUP_SKY, -350, 1760, default=False, sort=92)
 
-    # --- outputs ----------------------------------------------------------
-    MEL.connect_material_property(base_src, base_out, MP.MP_BASE_COLOR)
-    MEL.connect_material_property(final, 'Normal', MP.MP_NORMAL)
-    MEL.connect_material_property(final, 'Roughness', MP.MP_ROUGHNESS)
-    MEL.connect_material_property(spec_src, '', MP.MP_SPECULAR)
+    # --- output hooks -----------------------------------------------------
+    # The last point, and the only one that can reach the emissive and the opacity mask. A stylised
+    # pass that replaces the shading rather than joining it belongs here.
+    sig['BaseColor'] = (base_src, base_out)
+    sig['Emissive'] = (emissive_src, emissive_out)
+    sig['Specular'] = (spec_src, '')
+    sig['OpacityMask'] = (mask_tex, 'A')
 
     # On a foliage master the blue channel is transmission, and a plant is not metal either way.
     if FOLIAGE:
         no_metal = _expr(mat, unreal.MaterialExpressionConstant, 300, 500)
         no_metal.set_editor_property('r', 0.0)
-        MEL.connect_material_property(no_metal, '', MP.MP_METALLIC)
-    else:
-        MEL.connect_material_property(blend, 'Metallic', MP.MP_METALLIC)
-    MEL.connect_material_property(emissive_src, emissive_out, MP.MP_EMISSIVE_COLOR)
-    MEL.connect_material_property(mask_tex, 'A', MP.MP_OPACITY_MASK)
+        sig['Metallic'] = (no_metal, '')
+
+    sig = mob_hooks.apply(mat, mob_hooks.OUTPUT, sig, 700, -1600)
+
+    # --- outputs ----------------------------------------------------------
+    MEL.connect_material_property(sig['BaseColor'][0], sig['BaseColor'][1], MP.MP_BASE_COLOR)
+    MEL.connect_material_property(sig['Normal'][0], sig['Normal'][1], MP.MP_NORMAL)
+    MEL.connect_material_property(sig['Roughness'][0], sig['Roughness'][1], MP.MP_ROUGHNESS)
+    MEL.connect_material_property(sig['Specular'][0], sig['Specular'][1], MP.MP_SPECULAR)
+    MEL.connect_material_property(sig['Metallic'][0], sig['Metallic'][1], MP.MP_METALLIC)
+    MEL.connect_material_property(sig['Emissive'][0], sig['Emissive'][1], MP.MP_EMISSIVE_COLOR)
+    MEL.connect_material_property(sig['OpacityMask'][0], sig['OpacityMask'][1], MP.MP_OPACITY_MASK)
     # Ambient occlusion is deliberately left at 1. Cavity is already in BaseColor and Specular, and
     # the renderer supplies its own occlusion; feeding a baked map here darkens twice.
 

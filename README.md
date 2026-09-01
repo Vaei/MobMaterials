@@ -101,6 +101,13 @@ Or open [`docs/index.html`](docs/index.html) from a clone - it is a static site 
 - **Cavity, never ambient occlusion.** Micro shadowing multiplies base colour and specular; the AO pin stays free so it cannot double with the renderer's own occlusion
 - **A disabled feature is not compiled.** Its texture samples and its maths leave the shader entirely, rather than being multiplied by zero
 
+### Your own maths, in a generated material
+
+- **Hooks.** A generated material cannot be hand-edited and keep the edit. Name a material function on the recipe, name a point, and the generator splices it back in every time it authors
+- **Six points**, from straight after the layer blend to the last thing before the pins: `Layers`, `Instance`, `Weather`, `Shading`, `Output`, `WorldPositionOffset`
+- **Wired by name.** The function's inputs are matched against the signals live at that point and its outputs replace the ones they are named for. A signal it has no output for passes through untouched
+- **Gate it with a static bool** and an instance that leaves the switch off compiles none of it. Parameters declared inside the function surface on every instance, so a dynamic one can drive it
+
 ## Quick start
 
 1. Enable the plugin.

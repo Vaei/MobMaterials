@@ -23,6 +23,7 @@ import sys
 
 import unreal
 
+import mob_hooks
 import mob_version
 
 MEL = unreal.MaterialEditingLibrary
@@ -1758,6 +1759,42 @@ def _landscape_debug(mat, blocks, acc, colour_src, normal_src, wet, trample, acc
     return sw_c, sw_n
 
 
+def _connect_landscape_outputs(mat, sig):
+    """Drives the material pins from the signals as they left the last hook point.
+
+    Emissive and the opacity mask are seeded rather than connected: terrain has neither, so they
+    reach a pin only when a hook writes one, and an unhooked master compiles exactly as before.
+    """
+    MP = unreal.MaterialProperty
+    for name, prop in (('BaseColor', MP.MP_BASE_COLOR), ('Normal', MP.MP_NORMAL),
+                       ('Roughness', MP.MP_ROUGHNESS), ('Specular', MP.MP_SPECULAR)):
+        MEL.connect_material_property(sig[name][0], sig[name][1], prop)
+
+    for name, prop in (('Emissive', MP.MP_EMISSIVE_COLOR), ('OpacityMask', MP.MP_OPACITY_MASK)):
+        entry = sig.get(name)
+        if entry is not None and entry[0] is not _SEEDS.get(name):
+            MEL.connect_material_property(entry[0], entry[1], prop)
+
+
+# What a hook replaces when it writes a pin terrain does not otherwise have. Identity is the test,
+# so the seed itself never reaches a pin.
+_SEEDS = {}
+
+
+def _seed_optional_outputs(mat, sig):
+    """Gives Emissive and the opacity mask something for a hook to replace."""
+    _SEEDS.clear()
+    black = _expr(mat, unreal.MaterialExpressionConstant3Vector, 1700, -2000)
+    black.set_editor_property('constant', unreal.LinearColor(0.0, 0.0, 0.0, 1.0))
+    white = _expr(mat, unreal.MaterialExpressionConstant, 1700, -1950)
+    white.set_editor_property('r', 1.0)
+    _SEEDS['Emissive'] = black
+    _SEEDS['OpacityMask'] = white
+    sig['Emissive'] = (black, '')
+    sig['OpacityMask'] = (white, '')
+    return sig
+
+
 def build_master_material():
     """M_MobLandscape.
 
@@ -1882,6 +1919,15 @@ def build_master_material():
         acc_weight = (pair, 'Weight')
         by += 400
 
+    # --- hook signals -----------------------------------------------------
+    # What a project's own material functions may read and replace, carried down the chain so a
+    # function spliced in at one point is seen by everything after it. See EMobMaterialHookPoint.
+    sig = {'UV': (coords, ''), 'WorldPosition': (wpos, ''), 'WorldNormal': (wnormal, ''),
+           'PixelDepth': (depth, ''), 'Weights': acc_weight}
+    sig.update({pin: acc[pin] for pin in _ATTR_PINS})
+    sig = mob_hooks.apply(mat, mob_hooks.LAYERS, sig, -1000, -1800)
+    acc = {pin: sig[pin] for pin in _ATTR_PINS}
+
     # --- slope rock -------------------------------------------------------
     # Slope rock takes over from whatever is painted past an angle, so it needs a layer to take
     # over with. A layer named Rock is the intent; the last one is the fallback, because the
@@ -1924,6 +1970,12 @@ def build_master_material():
         my += 50
     acc = {p: (moss, p) for p in _ATTR_PINS}
 
+    # Terrain has no per-instance stage, so the point that means "dressed, before the weather"
+    # lands here: after the slope rock and the moss, with nothing wet or covered yet.
+    sig.update({pin: acc[pin] for pin in _ATTR_PINS})
+    sig = mob_hooks.apply(mat, mob_hooks.INSTANCE, sig, -150, -1800)
+    acc = {pin: sig[pin] for pin in _ATTR_PINS}
+
     # --- wetness ----------------------------------------------------------
     wet = _fn_call(mat, FN_ROOT + '/MF_MobTerrainWetness', 0, -400)
     for pin in _ATTR_PINS:
@@ -1942,6 +1994,8 @@ def build_master_material():
                'Roughness': (wet, 'Roughness')}
 
     # --- trample ----------------------------------------------------------
+    # Only trample dents the terrain on its own. A hook may still displace it either way.
+    trample_wpo = None
     # Read here and applied after accumulation. A print through snow has to be a dent in the snow,
     # and a covering laid over it afterwards would flatten the dent straight back out.
     trample = None
@@ -2000,7 +2054,7 @@ def build_master_material():
         flat.set_editor_property('constant', unreal.LinearColor(0.0, 0.0, 0.0, 0.0))
         wpo_switch = _static_switch(mat, 'bTrampleWPO', 'Trample', offset, '', flat, '',
                                     600, -1240, default=False)
-        MEL.connect_material_property(wpo_switch, '', unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+        trample_wpo = (wpo_switch, '')
 
         # Bounds are grown by this much wherever the material is used, so it stays near the deepest
         # print rather than the largest number anyone might type.
@@ -2071,6 +2125,13 @@ def build_master_material():
                                       surface[p][0], surface[p][1], 950, -400 + 100 * i), '')
                    for i, p in enumerate(('BaseColor', 'Normal', 'Roughness'))}
 
+    # --- weather hooks ----------------------------------------------------
+    sig.update(surface)
+    sig['Cavity'] = acc['Cavity']
+    sig['Height'] = acc['Height']
+    sig = mob_hooks.apply(mat, mob_hooks.WEATHER, sig, 1000, -1800)
+    surface = {pin: sig[pin] for pin in ('BaseColor', 'Normal', 'Roughness')}
+
     # --- global grade -----------------------------------------------------
     specular = _param_scalar(mat, 'Specular', 0.35, 'Global', 100, -500)
 
@@ -2085,7 +2146,7 @@ def build_master_material():
                    400, -400, 'Global grade')
     for pin in ('BaseColor', 'Normal', 'Roughness'):
         link(surface[pin][0], surface[pin][1], grade, pin)
-    link(acc['Cavity'][0], acc['Cavity'][1], grade, 'Cavity')
+    link(sig['Cavity'][0], sig['Cavity'][1], grade, 'Cavity')
     link(specular, '', grade, 'Specular')
     link(fade, '', grade, 'DistanceFade')
     gy = -400
@@ -2099,16 +2160,34 @@ def build_master_material():
     link(_param_vector(mat, 'DistanceColor', (0.55, 0.62, 0.72), 'Global', 100, gy + 50),
          '', grade, 'DistanceColor')
 
+    # --- shading hooks ----------------------------------------------------
+    sig['BaseColor'] = (grade, '')
+    sig['Normal'] = (grade, 'OutNormal')
+    sig['Roughness'] = (grade, 'OutRoughness')
+    sig['Specular'] = (grade, 'OutSpecular')
+    sig = mob_hooks.apply(mat, mob_hooks.SHADING, sig, 1400, -1800)
+    sig = _seed_optional_outputs(mat, sig)
+
+    # --- world position offset hooks --------------------------------------
+    # Added rather than replacing, so a project's own displacement stacks with the trample dent.
+    hooked = mob_hooks.apply(mat, mob_hooks.WPO, sig, 1400, -2400).get('WorldPositionOffset')
+    if hooked is not None and trample_wpo is not None:
+        total = _expr(mat, unreal.MaterialExpressionAdd, 1600, -2400)
+        link(trample_wpo[0], trample_wpo[1], total, 'A')
+        link(hooked[0], hooked[1], total, 'B')
+        hooked = (total, '')
+    offset_out = hooked or trample_wpo
+    if offset_out is not None:
+        MEL.connect_material_property(offset_out[0], offset_out[1],
+                                      unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+
     # --- runtime virtual texture -----------------------------------------
     # Only wired when the project asks for it. The RVT, the physical materials and the grass types
     # are all game assets, so referencing them unconditionally would leave the shipped material
     # pointing at packages that do not exist outside the project it was authored in.
     MP = unreal.MaterialProperty
     if not BUILD_PROJECT_OUTPUTS:
-        MEL.connect_material_property(grade, '', MP.MP_BASE_COLOR)
-        MEL.connect_material_property(grade, 'OutNormal', MP.MP_NORMAL)
-        MEL.connect_material_property(grade, 'OutRoughness', MP.MP_ROUGHNESS)
-        MEL.connect_material_property(grade, 'OutSpecular', MP.MP_SPECULAR)
+        _connect_landscape_outputs(mat, mob_hooks.apply(mat, mob_hooks.OUTPUT, sig, 1800, -1800))
 
         _spread(MEL.get_material_expressions(mat))
         errors = MEL.recompile_material(mat)
@@ -2122,10 +2201,8 @@ def build_master_material():
     terrain_rvt, height_rvt = build_rvt_assets()
 
     rvt_out = _expr(mat, unreal.MaterialExpressionRuntimeVirtualTextureOutput, 1400, 200)
-    link(grade, '', rvt_out, 'BaseColor')
-    link(grade, 'OutNormal', rvt_out, 'Normal')
-    link(grade, 'OutRoughness', rvt_out, 'Roughness')
-    link(grade, 'OutSpecular', rvt_out, 'Specular')
+    for pin in ('BaseColor', 'Normal', 'Roughness', 'Specular'):
+        link(sig[pin][0], sig[pin][1], rvt_out, pin)
     link(worldz, '', rvt_out, 'WorldHeight')
 
     rvt_sample = _expr(mat, unreal.MaterialExpressionRuntimeVirtualTextureSample, 900, -900)
@@ -2143,9 +2220,9 @@ def build_master_material():
         link(blend_src, blend_out, sw, 'False')
         return sw
 
-    sw_color = rvt_switch('BaseColor', grade, '', 1200, -700)
-    sw_normal = rvt_switch('Normal', grade, 'OutNormal', 1200, -550)
-    sw_rough = rvt_switch('Roughness', grade, 'OutRoughness', 1200, -400)
+    sw_color = rvt_switch('BaseColor', sig['BaseColor'][0], sig['BaseColor'][1], 1200, -700)
+    sw_normal = rvt_switch('Normal', sig['Normal'][0], sig['Normal'][1], 1200, -550)
+    sw_rough = rvt_switch('Roughness', sig['Roughness'][0], sig['Roughness'][1], 1200, -400)
 
     if INCLUDE_DEBUG:
         sw_color, sw_normal = _landscape_debug(
@@ -2153,10 +2230,10 @@ def build_master_material():
             (trample_mask, '') if trample_mask is not None else None,
             (accum, 'Mask') if accum is not None else None)
 
-    MEL.connect_material_property(sw_color, '', MP.MP_BASE_COLOR)
-    MEL.connect_material_property(sw_normal, '', MP.MP_NORMAL)
-    MEL.connect_material_property(sw_rough, '', MP.MP_ROUGHNESS)
-    MEL.connect_material_property(grade, 'OutSpecular', MP.MP_SPECULAR)
+    sig['BaseColor'] = (sw_color, '')
+    sig['Normal'] = (sw_normal, '')
+    sig['Roughness'] = (sw_rough, '')
+    _connect_landscape_outputs(mat, mob_hooks.apply(mat, mob_hooks.OUTPUT, sig, 1800, -1800))
 
     # --- physical material output ----------------------------------------
     build_physical_materials()

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Materials/MaterialFunction.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "MobMaterialRecipe.generated.h"
 
@@ -37,6 +38,107 @@ struct FMobLandscapeLayer
 	/** Physical material asset name to create or reuse. Only used when Build Project Outputs is on. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Layer")
 	FName PhysicalMaterial = NAME_None;
+};
+
+/**
+ * Where in a master a project's own material function is spliced in.
+ *
+ * The masters are generated, so anything hand-wired into one is lost the next time it is authored.
+ * A hook is how a project keeps its own maths in a generated material: name a function, name a
+ * point, and the generator wires it in every time.
+ *
+ * A hook function is wired by name. Every input it declares is looked up in the signals live at
+ * that point and connected if one matches; an input naming nothing available is left on its own
+ * default. Every output it declares replaces the signal of the same name, and a signal the
+ * function has no output for passes through untouched. Generating logs the pool at each point.
+ */
+UENUM(BlueprintType)
+enum class EMobMaterialHookPoint : uint8
+{
+	/**
+	 * Straight after the paint layers are folded into one surface, before anything is done to it.
+	 *
+	 * The layers as the art authored them: BaseColor, Normal, Roughness, Metallic, Cavity, Height
+	 * and the blend Weights. Where a project's own layer, decal or mask belongs, since everything
+	 * downstream then treats it as part of the surface and it gets wet and covered with the rest.
+	 */
+	Layers,
+
+	/**
+	 * After colour variation and the per-instance tint and roughness, before the weather.
+	 *
+	 * BaseColor, Normal, Roughness, Cavity, Height. For anything that should vary per instance but
+	 * still sit under rain and snow.
+	 */
+	Instance,
+
+	/**
+	 * After wetness, ripples, accumulation and trample, before the cavity and the distance clamp.
+	 *
+	 * BaseColor, Normal, Roughness, Specular, Wetness, Puddle, Cavity, Height. The point for
+	 * anything that has to see how wet or how covered the surface ended up.
+	 */
+	Weather,
+
+	/**
+	 * After the cavity and the distance clamp: the finished shading, before the debug views.
+	 *
+	 * BaseColor, Normal, Roughness, Specular, Metallic, Cavity, Height, Wetness.
+	 */
+	Shading,
+
+	/**
+	 * Last, with the emissive and the opacity mask settled and nothing after it but the pins.
+	 *
+	 * BaseColor, Normal, Roughness, Specular, Metallic, Emissive, OpacityMask. The point for a
+	 * stylised pass that replaces the shading rather than joining it, since it is the only one
+	 * that can reach Emissive and OpacityMask.
+	 */
+	Output,
+
+	/**
+	 * Added to world position offset rather than replacing it, so it stacks with the wind.
+	 *
+	 * Declare an output named WorldPositionOffset. Nothing else here is replaceable.
+	 */
+	WorldPositionOffset,
+};
+
+/** One project material function, and where it goes. */
+USTRUCT(BlueprintType)
+struct FMobMaterialHook
+{
+	GENERATED_BODY()
+
+	/**
+	 * The function to splice in. Its inputs and outputs are matched to the master's signals by name.
+	 *
+	 * A material function, not an instance of one: the generator reads the declared pin names off
+	 * the asset's own graph.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Hook")
+	TSoftObjectPtr<UMaterialFunction> Function;
+
+	/** Where in the master it goes. Which signals it can read and replace follows from this. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Hook")
+	EMobMaterialHookPoint Point = EMobMaterialHookPoint::Shading;
+
+	/**
+	 * Static bool parameter gating the whole hook. Leave empty and it is always in.
+	 *
+	 * Worth naming for anything most instances do not want: a static switch takes its dead branch
+	 * with it, so an instance with the switch off compiles none of the function.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Hook")
+	FName SwitchName = NAME_None;
+
+	/** What that switch defaults to on the master. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Hook")
+	bool bSwitchDefault = false;
+
+	/** Parameter group the switch is filed under in an instance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Hook")
+	FName SwitchGroup = TEXT("Project");
 };
 
 /**
@@ -308,6 +410,15 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather")
 	TSoftObjectPtr<UMaterialParameterCollection> WeatherCollection;
+
+	/**
+	 * Project material functions spliced into the master as it is generated.
+	 *
+	 * The point of them is that a generated material cannot be hand-edited and keep the edit. Put
+	 * the project's own maths in a function, name it here, and every regenerate wires it back in.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Hooks")
+	TArray<FMobMaterialHook> Hooks;
 
 	/** Whether there is enough here to author anything. */
 	UFUNCTION(BlueprintCallable, Category="Recipe")
