@@ -89,6 +89,7 @@ Or open [`docs/index.html`](docs/index.html) from a clone - it is a static site 
 - **Parallax, cheap or raymarched.** One-step offset sells brick and cobbles for a multiply and an add; occlusion walks the height field when a hero surface earns it
 - **Per-instance tint, roughness and wetness from custom primitive data**, so one material instance serves a thousand actors that all differ, with no new permutations and nothing to author per actor
 - **Foliage with wind** - masked, two-sided, and two scales of motion weighted so the base stays planted and the tips move. Light comes through the leaf per texel, from the mask channel a plant has no use for as metallic, so a tip glows where a stem stays opaque
+- **Glass** - translucent, two-sided and lit per pixel, more opaque towards grazing angles, with a `Fade` gameplay drives to take a canopy out for the pilot sitting under it
 - **Snow, from one number.** Drag `Snow` 0 to 1 and it settles across the world by which way each surface faces, starting in the crevices and covering the flats last. Terrain, props and roofs all follow the same value, and none of it costs a texture sample
 - **Footprints through it that clear back to the ground**, darkening, roughening and denting what they cross, from one render target a volume draws into. The terrain can sink into them for real - one vertex tap, opt in
 - **And they sound right.** A step on fresh snow plays snow; a step in your own trail plays the earth you uncovered. The audio reaches that from the same three numbers the shader does, so nothing is authored twice

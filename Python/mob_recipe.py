@@ -228,6 +228,8 @@ def apply_surface(module, recipe):
     module.INCLUDE_PRIMITIVE_DATA = bool(recipe.get_editor_property('primitive_data'))
     module.INCLUDE_DEBUG = bool(recipe.get_editor_property('debug_views'))
     module.FOLIAGE = bool(recipe.get_editor_property('foliage'))
+    # Foliage wins: a plant is never glass, and the recipe greys the option out under it.
+    module.GLASS = bool(recipe.get_editor_property('glass')) and not module.FOLIAGE
     module.INCLUDE_ACCUMULATION = bool(recipe.get_editor_property('accumulation'))
     module.INCLUDE_RIPPLES = bool(recipe.get_editor_property('rain_ripples'))
     _apply_rustle(module, recipe)
@@ -244,4 +246,6 @@ def apply_surface(module, recipe):
     if module.FOLIAGE:
         module._log('  foliage: masked, two sided, wind, rustle %s'
                     % (module.RUSTLE_MPC if module.INCLUDE_RUSTLE else 'off'))
+    if module.GLASS:
+        module._log('  glass: translucent, two sided, surface forward shading')
     return module

@@ -87,8 +87,10 @@ INCLUDE_PARALLAX = False
 INCLUDE_PRIMITIVE_DATA = True
 INCLUDE_DEBUG = True
 
-# Foliage is a whole different master, not a switch: see build_master_material.
+# Foliage and glass are whole different masters, not switches: see build_master_material. Foliage
+# wins if a recipe asks for both.
 FOLIAGE = False
+GLASS = False
 INCLUDE_ACCUMULATION = True
 INCLUDE_RIPPLES = True
 
@@ -387,6 +389,8 @@ OutCavity = MobShapeCavity(CRM.r, CavityContrast);
 // and the blend wants the surface as the sculpt left it.
 OutHeight = saturate(CRM.r + HeightBias);
 
+OutAlpha = BC.a;
+
 return max(Col, 0.0f);
 """
 
@@ -419,7 +423,11 @@ _LAYER_CONTROLS = [
     ('Contrast', FIT.FUNCTION_INPUT_SCALAR, 1.0, 43, ''),
 ]
 
-_LAYER_OUTPUTS = ['BaseColor', 'Normal', 'Roughness', 'Metallic', 'Transmission', 'Cavity', 'Height']
+_LAYER_OUTPUTS = ['BaseColor', 'Normal', 'Roughness', 'Metallic', 'Transmission', 'Cavity', 'Height',
+                  'Alpha']
+
+# The Custom node output each layer attribute leaves on, in _LAYER_OUTPUTS order.
+_LAYER_OUTPUT_PINS = [''] + ['Out' + attr for attr in _LAYER_OUTPUTS[1:]]
 
 
 def build_layer_function():
@@ -432,8 +440,9 @@ def build_layer_function():
     fn = get_or_create_function(
         'MF_MobSurfaceLayer',
         'Samples and grades one surface layer from a BaseColor + Normal + CRM pack. Projection '
-        'is chosen by the bTriplanar static bool; everything else is a scalar the master feeds '
-        'from uniquely named parameters.')
+        'is chosen by the bTriplanar static bool; '
+        'everything else is a scalar the master feeds from uniquely named parameters. Alpha is '
+        'the base colour alpha, for emissive.')
 
     ins = {}
     ins['BC'] = fn_input(fn, 'BC', FIT.FUNCTION_INPUT_TEXTURE2D, -1600, -600, 0,
@@ -581,7 +590,8 @@ def build_layer_function():
     grade = custom(fn, _CODE_LAYER_GRADE, CMOT.CMOT_FLOAT3, grade_inputs,
                    [('OutNormal', CMOT.CMOT_FLOAT3), ('OutRoughness', CMOT.CMOT_FLOAT1),
                     ('OutMetallic', CMOT.CMOT_FLOAT1), ('OutTransmission', CMOT.CMOT_FLOAT1),
-                    ('OutCavity', CMOT.CMOT_FLOAT1), ('OutHeight', CMOT.CMOT_FLOAT1)],
+                    ('OutCavity', CMOT.CMOT_FLOAT1), ('OutHeight', CMOT.CMOT_FLOAT1),
+                    ('OutAlpha', CMOT.CMOT_FLOAT1)],
                    100, -300, 'Grade the sampled layer')
     for pin in grade_inputs:
         if pin in finals:
@@ -589,10 +599,8 @@ def build_layer_function():
         else:
             link(ins[pin], '', grade, pin)
 
-    outs = ['', 'OutNormal', 'OutRoughness', 'OutMetallic', 'OutTransmission', 'OutCavity',
-            'OutHeight']
     for i, name in enumerate(_LAYER_OUTPUTS):
-        link(grade, outs[i], fn_output(fn, name, 500, -300 + 60 * i, i), '')
+        link(grade, _LAYER_OUTPUT_PINS[i], fn_output(fn, name, 500, -300 + 60 * i, i), '')
 
     _finish_fn(fn)
     save(fn)
@@ -613,6 +621,7 @@ OutMetallic = saturate(dot(float3(Metallic0, Metallic1, Metallic2), W));
 OutTransmission = saturate(dot(float3(Transmission0, Transmission1, Transmission2), W));
 OutCavity = saturate(dot(float3(Cavity0, Cavity1, Cavity2), W));
 OutHeight = saturate(dot(float3(Height0, Height1, Height2), W));
+OutAlpha = saturate(dot(float3(Alpha0, Alpha1, Alpha2), W));
 OutWeights = W;
 
 return MobBlend3(BaseColor0, BaseColor1, BaseColor2, W);
@@ -641,7 +650,8 @@ def build_blend_function():
                        else FIT.FUNCTION_INPUT_SCALAR)
             default = ((0.5, 0.5, 0.5) if attr == 'BaseColor' else
                        (0.0, 0.0, 1.0) if attr == 'Normal' else
-                       0.5 if attr in ('Roughness', 'Cavity', 'Height') else 0.0)
+                       0.5 if attr in ('Roughness', 'Cavity', 'Height') else
+                       1.0 if attr == 'Alpha' else 0.0)
             ins[name] = fn_input(fn, name, in_type, -900, y, i * 10 + j, default=default)
             y += 50
         y += 30
@@ -680,16 +690,14 @@ def build_blend_function():
                    [('OutNormal', CMOT.CMOT_FLOAT3), ('OutRoughness', CMOT.CMOT_FLOAT1),
                     ('OutMetallic', CMOT.CMOT_FLOAT1), ('OutTransmission', CMOT.CMOT_FLOAT1),
                     ('OutCavity', CMOT.CMOT_FLOAT1), ('OutHeight', CMOT.CMOT_FLOAT1),
-                    ('OutWeights', CMOT.CMOT_FLOAT3)],
+                    ('OutAlpha', CMOT.CMOT_FLOAT1), ('OutWeights', CMOT.CMOT_FLOAT3)],
                    -200, -300, 'Height-aware three way blend')
     for pin in blend_inputs:
         src = routed.get(pin, ins.get(pin))
         link(src, '', blend, pin)
 
-    outs = ['', 'OutNormal', 'OutRoughness', 'OutMetallic', 'OutTransmission', 'OutCavity',
-            'OutHeight']
     for i, name in enumerate(_LAYER_OUTPUTS):
-        link(blend, outs[i], fn_output(fn, name, 200, -300 + 60 * i, i), '')
+        link(blend, _LAYER_OUTPUT_PINS[i], fn_output(fn, name, 200, -300 + 60 * i, i), '')
     # Only the blend knows these, and a debug view of a weight is the whole point of having one.
     link(blend, 'OutWeights', fn_output(fn, 'Weights', 200, -300 + 60 * len(_LAYER_OUTPUTS),
                                         len(_LAYER_OUTPUTS)), '')
@@ -1034,17 +1042,27 @@ def build_wetness_function():
 # ---------------------------------------------------------------------------
 
 def build_emissive_function():
-    """MF_MobSurfaceEmissive: a masked glow."""
+    """MF_MobSurfaceEmissive: a masked glow, or the base colour glowing where its alpha is set.
+
+    bFromBaseColorAlpha picks the source and bEnabled gates both. Switched ahead of the gate so the
+    mask's sample leaves with its branch when the alpha is the source.
+    """
     fn = get_or_create_function(
         'MF_MobSurfaceEmissive',
-        'Emissive colour from a mask texture. Gated by a static bool, so a material that does not '
-        'glow neither samples the mask nor writes the pin.')
+        'Emissive colour from a mask texture, or from the base colour times its alpha when '
+        'bFromBaseColorAlpha is on. Gated by a static bool, so a material that does not glow '
+        'neither samples the mask nor writes the pin.')
 
     tex = fn_input(fn, 'MaskTexture', FIT.FUNCTION_INPUT_TEXTURE2D, -700, -300, 0)
     uv = fn_input(fn, 'UV', FIT.FUNCTION_INPUT_VECTOR2, -700, -240, 1, default=(0.0, 0.0))
     color = fn_input(fn, 'Color', FIT.FUNCTION_INPUT_VECTOR3, -700, -180, 2, default=(1.0, 1.0, 1.0))
     intensity = fn_input(fn, 'Intensity', FIT.FUNCTION_INPUT_SCALAR, -700, -120, 3, default=1.0)
+    base = fn_input(fn, 'BaseColor', FIT.FUNCTION_INPUT_VECTOR3, -700, 0, 4, default=(0.0, 0.0, 0.0),
+                    description='Blended layer colour, before variation and weather')
+    alpha = fn_input(fn, 'Alpha', FIT.FUNCTION_INPUT_SCALAR, -700, 60, 5, default=0.0,
+                     description='Blended base colour alpha')
     enabled = fn_input(fn, 'bEnabled', FIT.FUNCTION_INPUT_STATIC_BOOL, -700, -60, 90)
+    from_alpha = fn_input(fn, 'bFromBaseColorAlpha', FIT.FUNCTION_INPUT_STATIC_BOOL, -700, 120, 91)
 
     sample = _fn_sample(fn, tex, ST.SAMPLERTYPE_COLOR, uv, '', -400, -300)
     glow = custom(fn, 'return Mask.rgb * Color * Intensity;', CMOT.CMOT_FLOAT3,
@@ -1053,8 +1071,18 @@ def build_emissive_function():
     link(color, '', glow, 'Color')
     link(intensity, '', glow, 'Intensity')
 
+    alpha_glow = custom(fn, 'return BaseColor * Alpha * Color * Intensity;', CMOT.CMOT_FLOAT3,
+                        ['BaseColor', 'Alpha', 'Color', 'Intensity'], [], -150, 0,
+                        'Emissive from base colour alpha')
+    link(base, '', alpha_glow, 'BaseColor')
+    link(alpha, '', alpha_glow, 'Alpha')
+    link(color, '', alpha_glow, 'Color')
+    link(intensity, '', alpha_glow, 'Intensity')
+
+    source = _fn_switch(fn, from_alpha, alpha_glow, '', glow, '', 0, -300)
+
     off = _fn_const3(fn, (0.0, 0.0, 0.0), -150, -180)
-    result = _fn_switch(fn, enabled, glow, '', off, '', 100, -300)
+    result = _fn_switch(fn, enabled, source, '', off, '', 100, -300)
     link(result, '', fn_output(fn, 'Emissive', 300, -300, 0), '')
 
     _finish_fn(fn)
@@ -1344,21 +1372,25 @@ def _param_vector(mat, name, rgb, group, x, y, sort=0):
     return e
 
 
-def _param_texture(mat, name, texture_path, group, x, y, sort=0):
+def _param_texture(mat, name, texture_path, group, x, y, sort=0, desc=None):
     e = _expr(mat, unreal.MaterialExpressionTextureObjectParameter, x, y)
     e.set_editor_property('parameter_name', name)
     e.set_editor_property('texture', unreal.load_asset(texture_path))
     e.set_editor_property('group', group)
     e.set_editor_property('sort_priority', sort)
+    if desc:
+        e.set_editor_property('desc', desc)
     return e
 
 
-def _param_static_bool(mat, name, default, group, x, y, sort=0):
+def _param_static_bool(mat, name, default, group, x, y, sort=0, desc=None):
     e = _expr(mat, unreal.MaterialExpressionStaticBoolParameter, x, y)
     e.set_editor_property('parameter_name', name)
     e.set_editor_property('default_value', bool(default))
     e.set_editor_property('group', group)
     e.set_editor_property('sort_priority', sort)
+    if desc:
+        e.set_editor_property('desc', desc)
     return e
 
 
@@ -1392,6 +1424,14 @@ _CODE_SKY_REFLECTION = """
 return MobSkyReflection(Panorama, PanoramaSampler, WorldNormal, CameraVector, Roughness, MaxMip,
                         SkyYaw, Strength);
 """
+# The normal is the shading one, which two-sided flips on a back face, so the glass grazes the same
+# way seen from inside.
+_CODE_GLASS_OPACITY = """
+float Facing = saturate(dot(normalize(Normal), CameraVector));
+float Grazing = pow(max(1.0f - Facing, 1e-4f), max(Power, 0.01f));
+return saturate(lerp(Opacity, GrazingOpacity, Grazing) * Fade);
+"""
+
 GROUP_ACCUM = '35 - Accumulation'
 GROUP_TRAMPLE = '37 - Trample'
 GROUP_VARIATION = '40 - Variation'
@@ -1400,9 +1440,33 @@ GROUP_DETAIL = '45 - Detail'
 GROUP_EMISSIVE = '50 - Emissive'
 GROUP_DISTANCE = '60 - Distance'
 GROUP_FOLIAGE = '70 - Foliage'
+GROUP_GLASS = '75 - Glass'
 GROUP_DEBUG = '90 - Debug'
 
 _LAYER_GROUPS = ['01 - Layer 0', '02 - Layer 1', '03 - Layer 2']
+
+EMISSIVE_ALPHA_DESC = (
+    'Glows the base colour where its alpha is set, instead of reading EmissiveMask: the blended layer '
+    'colour times the blended BaseColor alpha times EmissiveColor times EmissiveIntensity. Only read '
+    'when bEmissive is on; EmissiveMask is then never sampled.\n\n'
+    'A BaseColor with no alpha samples 1, so the whole surface glows. EmissiveColor still tints the '
+    'result: set it white for the art\'s own colour.'
+)
+
+GLASS_OPACITY_DESC = 'Opacity looking straight through the glass.'
+
+GLASS_GRAZING_DESC = (
+    'Opacity at a grazing angle. Glass reflects more and lets less through towards its edges, which '
+    'is most of what makes a pane read as glass rather than as a tint.'
+)
+
+GLASS_FRESNEL_DESC = 'How quickly opacity rises towards grazing. Higher keeps the rise to the edges.'
+
+GLASS_FADE_DESC = (
+    'Multiplies the whole opacity, grazing edge included. 1 is the glass as authored, 0 is gone.\n\n'
+    'The scalar gameplay drives through a dynamic material instance to fade the glass out, for '
+    'example the local pilot\'s own canopy.'
+)
 
 # Defaults the master hands each layer. Layer 1 and 2 tile a little differently out of the box so a
 # freshly enabled layer is visible rather than a perfect copy of the base.
@@ -1502,12 +1566,15 @@ def build_master_material():
     Opaque and one-sided. Masked and two-sided are per-instance base property overrides rather
     than switches, so the common path pays nothing for them; note that r.EarlyZPass is 0 in this
     project, which makes masked geometry cost real overdraw.
+
+    A glass master is translucent and two-sided instead, with opacity on a fresnel and no opacity
+    mask. Everything else is the standard master.
     """
     mat = get_or_create_material(ROOT, 'M_' + MASTER_NAME)
 
     # Shading model, two-sidedness and blend mode are material properties, not switches, so a
-    # foliage master is a different material rather than a toggle on this one. That is the right
-    # shape anyway: foliage wants different defaults the whole way down.
+    # foliage or glass master is a different material rather than a toggle on this one. That is the
+    # right shape anyway: each wants different defaults the whole way down.
     if FOLIAGE:
         mat.set_editor_property('blend_mode', unreal.BlendMode.BLEND_MASKED)
         mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_TWO_SIDED_FOLIAGE)
@@ -1519,6 +1586,17 @@ def build_master_material():
         mat.set_editor_property('used_with_niagara_mesh_particles', True)
         mat.set_editor_property('used_with_niagara_sprites', True)
         mat.set_editor_property('used_with_instanced_static_meshes', True)
+    elif GLASS:
+        mat.set_editor_property('blend_mode', unreal.BlendMode.BLEND_TRANSLUCENT)
+        mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
+
+        # A canopy is seen from inside as much as from out.
+        mat.set_editor_property('two_sided', True)
+
+        # Lit per pixel with forward shading, so a light puts a specular highlight on the glass. The
+        # volume modes are diffuse only, and glass is mostly specular.
+        mat.set_editor_property('translucency_lighting_mode',
+                                unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)
     else:
         mat.set_editor_property('blend_mode', unreal.BlendMode.BLEND_OPAQUE)
         mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
@@ -1930,7 +2008,8 @@ def build_master_material():
 
     # --- emissive ---------------------------------------------------------
     emissive = _fn_call(mat, FN_ROOT + '/MF_MobSurfaceEmissive', 0, 200)
-    link(_param_texture(mat, 'EmissiveMask', BASE_TEX_EMISSIVE, GROUP_EMISSIVE, -300, 200, 0),
+    link(_param_texture(mat, 'EmissiveMask', BASE_TEX_EMISSIVE, GROUP_EMISSIVE, -300, 200, 0,
+                        desc='White where it glows. Not sampled when bEmissiveFromBaseColorAlpha is on.'),
          '', emissive, 'MaskTexture')
     link(uv, '', emissive, 'UV')
     link(_param_vector(mat, 'EmissiveColor', (1.0, 0.85, 0.6), GROUP_EMISSIVE, -300, 280, 1),
@@ -1939,6 +2018,11 @@ def build_master_material():
          '', emissive, 'Intensity')
     link(_param_static_bool(mat, 'bEmissive', False, GROUP_EMISSIVE, -300, 380, 90),
          '', emissive, 'bEnabled')
+    link(blend, 'BaseColor', emissive, 'BaseColor')
+    link(blend, 'Alpha', emissive, 'Alpha')
+    link(_param_static_bool(mat, 'bEmissiveFromBaseColorAlpha', False, GROUP_EMISSIVE, -300, 430, 91,
+                            desc=EMISSIVE_ALPHA_DESC),
+         '', emissive, 'bFromBaseColorAlpha')
 
     # --- shading hooks ----------------------------------------------------
     sig['BaseColor'] = (final, 'BaseColor')
@@ -1949,14 +2033,34 @@ def build_master_material():
 
     # --- opacity mask -----------------------------------------------------
     # Only compiled when an instance overrides the blend mode to Masked, so this needs no switch of
-    # its own; an opaque instance never reads the pin.
-    mask_tex = _expr(mat, unreal.MaterialExpressionTextureSampleParameter2D, 0, 600)
-    mask_tex.set_editor_property('parameter_name', 'OpacityMask')
-    mask_tex.set_editor_property('texture', unreal.load_asset(BASE_TEX_MASK))
-    mask_tex.set_editor_property('sampler_source', unreal.SamplerSourceMode.SSM_WRAP_WORLD_GROUP_SETTINGS)
-    mask_tex.set_editor_property('sampler_type', ST.SAMPLERTYPE_COLOR)
-    mask_tex.set_editor_property('group', GROUP_GLOBAL)
-    link(uv, '', mask_tex, 'UVs')
+    # its own; an opaque instance never reads the pin. Glass is translucent and has no mask.
+    mask_tex = None
+    if not GLASS:
+        mask_tex = _expr(mat, unreal.MaterialExpressionTextureSampleParameter2D, 0, 600)
+        mask_tex.set_editor_property('parameter_name', 'OpacityMask')
+        mask_tex.set_editor_property('texture', unreal.load_asset(BASE_TEX_MASK))
+        mask_tex.set_editor_property('sampler_source',
+                                     unreal.SamplerSourceMode.SSM_WRAP_WORLD_GROUP_SETTINGS)
+        mask_tex.set_editor_property('sampler_type', ST.SAMPLERTYPE_COLOR)
+        mask_tex.set_editor_property('group', GROUP_GLOBAL)
+        link(uv, '', mask_tex, 'UVs')
+
+    # --- glass ------------------------------------------------------------
+    glass_opacity = None
+    if GLASS:
+        glass_opacity = custom(mat, _CODE_GLASS_OPACITY, CMOT.CMOT_FLOAT1,
+                               ['Normal', 'CameraVector', 'Opacity', 'GrazingOpacity', 'Power',
+                                'Fade'],
+                               [], 300, 600, 'Glass opacity')
+        link(_expr(mat, unreal.MaterialExpressionPixelNormalWS, 0, 600), '', glass_opacity, 'Normal')
+        link(camera, '', glass_opacity, 'CameraVector')
+        for name, pin, default, sort, desc in (
+                ('Opacity', 'Opacity', 0.12, 0, GLASS_OPACITY_DESC),
+                ('GrazingOpacity', 'GrazingOpacity', 0.6, 1, GLASS_GRAZING_DESC),
+                ('FresnelExponent', 'Power', 4.0, 2, GLASS_FRESNEL_DESC),
+                ('Fade', 'Fade', 1.0, 3, GLASS_FADE_DESC)):
+            link(_param_scalar(mat, name, default, GROUP_GLASS, 0, 650 + sort * 50, sort, desc=desc),
+                 '', glass_opacity, pin)
 
     # --- foliage ----------------------------------------------------------
     # Only a foliage master moves its vertices on its own. A hook may still displace either kind.
@@ -2180,7 +2284,17 @@ def build_master_material():
     sig['BaseColor'] = (base_src, base_out)
     sig['Emissive'] = (emissive_src, emissive_out)
     sig['Specular'] = (spec_src, '')
-    sig['OpacityMask'] = (mask_tex, 'A')
+    if mask_tex is not None:
+        sig['OpacityMask'] = (mask_tex, 'A')
+    if glass_opacity is not None:
+        opacity_src = glass_opacity
+        if INCLUDE_DEBUG:
+            # A debug view drawn through 12% glass is a debug view nobody can read.
+            solid = _expr(mat, unreal.MaterialExpressionConstant, 300, 750)
+            solid.set_editor_property('r', 1.0)
+            opacity_src = _switch_param(mat, 'bDebug', solid, '', glass_opacity, '', GROUP_DEBUG,
+                                        500, 700, desc=DEBUG_SWITCH_DESC)
+        sig['Opacity'] = (opacity_src, '')
 
     # On a foliage master the blue channel is transmission, and a plant is not metal either way.
     if FOLIAGE:
@@ -2197,7 +2311,10 @@ def build_master_material():
     MEL.connect_material_property(sig['Specular'][0], sig['Specular'][1], MP.MP_SPECULAR)
     MEL.connect_material_property(sig['Metallic'][0], sig['Metallic'][1], MP.MP_METALLIC)
     MEL.connect_material_property(sig['Emissive'][0], sig['Emissive'][1], MP.MP_EMISSIVE_COLOR)
-    MEL.connect_material_property(sig['OpacityMask'][0], sig['OpacityMask'][1], MP.MP_OPACITY_MASK)
+    if 'OpacityMask' in sig:
+        MEL.connect_material_property(sig['OpacityMask'][0], sig['OpacityMask'][1], MP.MP_OPACITY_MASK)
+    if 'Opacity' in sig:
+        MEL.connect_material_property(sig['Opacity'][0], sig['Opacity'][1], MP.MP_OPACITY)
     # Ambient occlusion is deliberately left at 1. Cavity is already in BaseColor and Specular, and
     # the renderer supplies its own occlusion; feeding a baked map here darkens twice.
 
@@ -2236,9 +2353,17 @@ _INSTANCE_PRESETS = [
     ('Lamp', {'bEmissive': True}),
 ]
 
+# A pane wants none of the building or rock setups, and the opaque presets would be four
+# permutations nobody parents a canopy to.
+_GLASS_PRESETS = [
+    ('Clear', {}),
+    ('Emissive', {'bEmissive': True}),
+]
+
 _SWITCH_DEFAULTS = {
     'bVertexPaint': True, 'bLayer1': False, 'bLayer2': False,
     'Layer0_Triplanar': False, 'Layer1_Triplanar': False, 'Layer2_Triplanar': False,
+    'bEmissiveFromBaseColorAlpha': False,
     'Layer0_TileBreak': False, 'Layer1_TileBreak': False, 'Layer2_TileBreak': False,
     'Layer0_Parallax': False, 'Layer1_Parallax': False, 'Layer2_Parallax': False,
     'Layer0_ParallaxOcclusion': False, 'Layer1_ParallaxOcclusion': False,
@@ -2253,7 +2378,7 @@ _SWITCH_DEFAULTS = {
 def build_material_instances():
     master = unreal.load_asset(ROOT + '/M_' + MASTER_NAME)
     built = []
-    for name, overrides in _INSTANCE_PRESETS:
+    for name, overrides in (_GLASS_PRESETS if GLASS else _INSTANCE_PRESETS):
         mi = _get_or_create_instance('MI_%s_%s' % (MASTER_NAME, name), master)
         for switch, default in _SWITCH_DEFAULTS.items():
             if switch == 'bDetail' and not INCLUDE_DETAIL:

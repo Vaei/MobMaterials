@@ -38,7 +38,7 @@ GENERATOR_TAG = PLUGIN_NAME + '.Generator'
 
 # The last plugin version whose generated output changed. Bump this when a generator edit means
 # existing content has to be rebuilt; leave it alone for a release that only touched code.
-CONTENT_VERSION = '1.0.0'
+CONTENT_VERSION = '1.1.0'
 
 # The scripts that decide what a generated asset contains. This module is deliberately absent: the
 # digest would then change every time the stamping itself was edited.

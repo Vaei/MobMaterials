@@ -9,6 +9,7 @@
 #include "Materials/MaterialInterface.h"
 #include "MobMaterialsEditorStyle.h"
 #include "MobSimplifyWindow.h"
+#include "MobTextureSetup.h"
 #include "MobTrampleVolumeCustomization.h"
 #include "SMobLayerEditor.h"
 #include "MobMaterialsEditorUserSettings.h"
@@ -299,6 +300,18 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 		Menu.EndSection();
 	}
 
+	// Greyed out entries say why in their own tooltip: a disabled entry with the same text as an
+	// enabled one only tells you it is disabled, which is the part already visible.
+	auto Reason = [](const FText& Tip, FText (*Why)()) -> TAttribute<FText>
+	{
+		return TAttribute<FText>::CreateLambda([Tip, Why]
+		{
+			const FText Blocked = Why();
+			return Blocked.IsEmpty() ? Tip
+				: FText::Format(LOCTEXT("LevelToolBlocked", "{0}\n\n{1}"), Tip, Blocked);
+		});
+	};
+
 	Menu.BeginSection(TEXT("MobTextures"), LOCTEXT("TexturesSection", "Textures"));
 	Menu.AddMenuEntry(
 		LOCTEXT("LayerEditor", "Edit Layers..."),
@@ -349,19 +362,39 @@ TSharedRef<SWidget> FMobMaterialsEditorModule::BuildMenu()
 			"Common layouts are presets; anything else is three slots you set yourself."),
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.Texture2D")),
 		FUIAction(FExecuteAction::CreateStatic(&FMobChannelRemapWindow::Open)));
-	Menu.EndSection();
 
-	// Greyed out entries say why in their own tooltip: a disabled entry with the same text as an
-	// enabled one only tells you it is disabled, which is the part already visible.
-	auto Reason = [](const FText& Tip, FText (*Why)()) -> TAttribute<FText>
-	{
-		return TAttribute<FText>::CreateLambda([Tip, Why]
-		{
-			const FText Blocked = Why();
-			return Blocked.IsEmpty() ? Tip
-				: FText::Format(LOCTEXT("LevelToolBlocked", "{0}\n\n{1}"), Tip, Blocked);
-		});
-	};
+	Menu.AddMenuEntry(
+		LOCTEXT("SetupTexturesUnique", "Set Up Selected Textures For Unique UVs"),
+		Reason(LOCTEXT("SetupTexturesUniqueTip",
+			"Sets compression, sRGB and texture group on the selected textures from their suffix, and "
+			"address Clamp. For art on a mesh's own unwrap. Colour (_BaseColor, _BC, _Albedo, _Diffuse, "
+			"_Color, _Emissive) is sRGB with alpha kept, normal (_Normal, _NRM, _N) is a normal map, a "
+			"mask pack (_HRC, _CRM, _CRT, _ORM, _MRA, _RMA, _ARM, _Masks, _Mask) is linear masks. "
+			"Anything else is left alone and named. Saves what it changes.\n\n"
+			"The masters sample through shared Wrap samplers, so the address mode governs mip generation "
+			"and any material sampling with the texture asset's own sampler, not the masters."),
+			&FMobTextureSetup::SetupReason),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.Texture2D")),
+		FUIAction(
+			FExecuteAction::CreateStatic(&FMobTextureSetup::SetupSelectedForUniqueUVs),
+			FCanExecuteAction::CreateStatic(&FMobTextureSetup::CanSetupSelected)));
+
+	Menu.AddMenuEntry(
+		LOCTEXT("SetupTexturesTiling", "Set Up Selected Textures For Tiling"),
+		Reason(LOCTEXT("SetupTexturesTilingTip",
+			"Sets compression, sRGB and texture group on the selected textures from their suffix, and "
+			"address Wrap. For art that repeats across a surface. Colour (_BaseColor, _BC, _Albedo, "
+			"_Diffuse, _Color, _Emissive) is sRGB with alpha kept, normal (_Normal, _NRM, _N) is a "
+			"normal map, a mask pack (_HRC, _CRM, _CRT, _ORM, _MRA, _RMA, _ARM, _Masks, _Mask) is linear "
+			"masks. Anything else is left alone and named. Saves what it changes.\n\n"
+			"The masters sample through shared Wrap samplers, so the address mode governs mip generation "
+			"and any material sampling with the texture asset's own sampler, not the masters."),
+			&FMobTextureSetup::SetupReason),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.Texture2D")),
+		FUIAction(
+			FExecuteAction::CreateStatic(&FMobTextureSetup::SetupSelectedForTiling),
+			FCanExecuteAction::CreateStatic(&FMobTextureSetup::CanSetupSelected)));
+	Menu.EndSection();
 
 	Menu.BeginSection(TEXT("MobLevel"), LOCTEXT("LevelSection", "Level"));
 	Menu.AddMenuEntry(

@@ -90,9 +90,9 @@ enum class EMobMaterialHookPoint : uint8
 	/**
 	 * Last, with the emissive and the opacity mask settled and nothing after it but the pins.
 	 *
-	 * BaseColor, Normal, Roughness, Specular, Metallic, Emissive, OpacityMask. The point for a
-	 * stylised pass that replaces the shading rather than joining it, since it is the only one
-	 * that can reach Emissive and OpacityMask.
+	 * BaseColor, Normal, Roughness, Specular, Metallic, Emissive, OpacityMask, with Opacity in place
+	 * of OpacityMask on a glass master. The point for a stylised pass that replaces the shading
+	 * rather than joining it, since it is the only one that can reach Emissive and the opacity.
 	 */
 	Output,
 
@@ -281,6 +281,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
 		meta=(EditCondition="Kind == EMobMaterialKind::Surface", EditConditionHides))
 	bool bFoliage = false;
+
+	/**
+	 * Authors a glass master instead of a standard one: translucent, two-sided, lit per pixel by the
+	 * forward renderer, with opacity rising towards grazing angles and a Fade scalar to take the whole
+	 * pane out.
+	 *
+	 * For canopies, visors and windows. Two-sided because a canopy is seen from inside. There is no
+	 * opacity mask: translucency replaces it, and the layers, emissive and weather work as they do on
+	 * the standard master.
+	 *
+	 * This cannot be a switch on the standard master for the same reason foliage cannot: blend mode
+	 * and two-sidedness are material properties rather than parameters. Ignored when Foliage is on,
+	 * since a plant is never glass.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Surface",
+		meta=(EditCondition="Kind == EMobMaterialKind::Surface && !bFoliage", EditConditionHides))
+	bool bGlass = false;
 
 	/**
 	 * Adds accumulation: a covering that settles by which way a surface faces - snow on a ledge,

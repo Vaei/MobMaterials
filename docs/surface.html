@@ -41,6 +41,25 @@
 
 <div data-shot="surface.packs"></div>
 
+<h2>Texture setup</h2>
+
+<p>Select the textures in the Content Browser, then <b>Mat &rarr; Set Up Selected Textures For Unique UVs</b> for art on a mesh's own unwrap, or <b>&hellip; For Tiling</b> for art that repeats. Each texture is set from its suffix, case-insensitive, and saved:</p>
+
+<div class="tw"><table>
+<thead><tr><th>Suffix</th><th>sRGB</th><th>Compression</th><th>Texture group</th></tr></thead>
+<tbody>
+<tr><td><code>_BaseColor</code>, <code>_BC</code>, <code>_Albedo</code>, <code>_Diffuse</code>, <code>_Color</code>, <code>_Emissive</code></td><td>on</td><td>Default, alpha kept</td><td>World</td></tr>
+<tr><td><code>_Normal</code>, <code>_NRM</code>, <code>_N</code></td><td>off</td><td>Normalmap</td><td>WorldNormalMap</td></tr>
+<tr><td><code>_HRC</code>, <code>_CRM</code>, <code>_CRT</code>, <code>_ORM</code>, <code>_MRA</code>, <code>_RMA</code>, <code>_ARM</code>, <code>_Masks</code>, <code>_Mask</code></td><td>off</td><td>Masks</td><td>WorldSpecular</td></tr>
+</tbody>
+</table></div>
+
+<p>Unique UVs sets address Clamp on X and Y, tiling sets Wrap. A texture with no recognised suffix is left untouched and named in the notification.</p>
+
+<div class="note">
+The masters sample through shared Wrap samplers, so the address mode does not change how they read a texture. It governs mip generation and any other material that samples with the texture asset's own sampler.
+</div>
+
 <h2>Layers</h2>
 
 <p>Three, each a full pack with its own <code>UVScale</code>, <code>UVRotation</code>, <code>UVOffsetU</code>/<code>V</code>, and its own grading. Layers 1 and 2 are gated by <code>bLayer1</code> and <code>bLayer2</code>.</p>
@@ -227,6 +246,14 @@ Occlusion mode is the <b>only</b> thing in either master that spends a sampler s
 
 <p><code>bEmissive</code>. A mask texture times <code>EmissiveColor</code> times <code>EmissiveIntensity</code>. Off, the mask is never sampled and the pin is never written.</p>
 
+<p><code>bEmissiveFromBaseColorAlpha</code> takes the glow from the base colour instead: the blended layer colour times the blended <code>LayerN_BC</code> alpha times <code>EmissiveColor</code> times <code>EmissiveIntensity</code>. It only picks the source, so <code>bEmissive</code> still has to be on, and with it on <code>EmissiveMask</code> is never sampled. The alpha is the base colour tap already paid for, so it costs no sample.</p>
+
+<p><code>EmissiveColor</code> still tints it, and defaults warm. Set it white for the art's own colour.</p>
+
+<div class="warn">
+A base colour with no alpha samples 1, and then the whole surface glows. The alpha also has to survive import: <b>Compress Without Alpha</b> off. <b>Set Up Selected Textures</b> sets that for any colour suffix.
+</div>
+
 <h2>Detail</h2>
 
 <p><code>bDetail</code>. A second, much finer normal laid over whatever the layers blended to, faded out with distance.</p>
@@ -286,6 +313,27 @@ Masked geometry costs real overdraw wherever the project runs without a depth pr
 <h2>Foliage</h2>
 
 <p>A foliage master is a different master: two-sidedness, the shading model and the blend mode are material properties rather than parameters, so it cannot be a switch on this one. Blue in the layer pack becomes transmission instead of metallic, and wind and rustle appear on world position offset. It has a page of its own: <a href="foliage.html">Foliage</a>.</p>
+
+<h2>Glass</h2>
+
+<p>Canopies, visors, windows. A different master for the same reason foliage is: point a second recipe at the same output path with a different asset name and <code>bGlass</code> on. If <code>bFoliage</code> is also on, foliage wins.</p>
+
+<p>Translucent, two-sided (a canopy is seen from inside), translucency lighting <b>Surface ForwardShading</b>, no opacity mask. Layers, emissive, weather and everything else work as on the standard master.</p>
+
+<div class="tw"><table>
+<tr><td><code>Opacity</code></td><td>looking straight through. Default <code>0.12</code></td></tr>
+<tr><td><code>GrazingOpacity</code></td><td>at a grazing angle. Default <code>0.6</code></td></tr>
+<tr><td><code>FresnelExponent</code></td><td>how quickly it rises towards grazing. Default <code>4</code></td></tr>
+<tr><td><code>Fade</code></td><td>multiplies the whole opacity. Default <code>1</code>. Drive it from gameplay through a dynamic material instance to fade the glass out, for example the local pilot's own canopy</td></tr>
+</table></div>
+
+<p>Opacity is <code>lerp(Opacity, GrazingOpacity, fresnel) * Fade</code>. <code>bDebug</code> forces it to 1 so a debug view is readable.</p>
+
+<p>Presets are <code>MI_&lt;AssetName&gt;_Clear</code> (everything off) and <code>_Emissive</code>.</p>
+
+<div class="caution">
+Translucency is drawn after the opaque pass and sorted per object, not per pixel. Two overlapping panes on one mesh can sort wrongly from some angles; split them into separate meshes if that shows.
+</div>
 
 <h2>Cost</h2>
 

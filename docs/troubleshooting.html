@@ -50,6 +50,10 @@
 <tr><td>Foliage went flat and dark when <code>bTransmissionMap</code> was ticked</td><td>the pack in <code>Layer0_CRT</code> has metallic in blue, not transmission, and metallic is 0 on a plant - so no light gets through. Repack it: <b>Remap Texture Channels</b>, target <b>CRT</b></td></tr>
 <tr><td>Macro variation does nothing</td><td><code>MacroNoiseTexture</code> defaults to a flat 4x4. It needs a real tiling noise, which the plugin does not ship</td></tr>
 <tr><td>Emissive does nothing</td><td><code>EmissiveMask</code> defaults to black. Assign a mask, or a white texture for a flat glow</td></tr>
+<tr><td>The whole surface glows with <code>bEmissiveFromBaseColorAlpha</code> on</td><td>the base colour has no alpha, or was imported with <b>Compress Without Alpha</b>, so alpha samples 1. <b>Set Up Selected Textures</b> keeps alpha on colour suffixes</td></tr>
+<tr><td><code>bEmissiveFromBaseColorAlpha</code> does nothing</td><td><code>bEmissive</code> is off. The alpha switch only picks the source</td></tr>
+<tr><td>A layer reads shiny metal, or its crevices are in the wrong places</td><td>a landscape HRC is in <code>LayerN_CRM</code>, so height is read as cavity and cavity as metallic. Repack it as a CRM with <b>Remap Texture Channels</b></td></tr>
+<tr><td>Glass is invisible</td><td><code>Fade</code> is 0, usually left there by a dynamic instance. Or <code>Opacity</code> and <code>GrazingOpacity</code> are both near 0</td></tr>
 <tr><td>Custom primitive data does nothing</td><td><b>Num Custom Data Floats</b> on the component is below 6. Tint is indices 0-3, roughness 4, wetness 5</td></tr>
 </tbody>
 </table></div>

@@ -41,6 +41,9 @@ SURFACE_EXPECT = [
     ('per-instance data', ['bPrimitiveData'], dict(tex=3, samplers=4)),
     ('debug', ['bDebug'], dict(samplers=4)),
     ('emissive', ['bEmissive'], dict(tex=4, samplers=4)),
+    # The glow reads the base colour taps already paid for, so the mask's sample leaves with it.
+    ('emissive from base colour alpha', ['bEmissive', 'bEmissiveFromBaseColorAlpha'],
+     dict(tex=3, samplers=4)),
     # Accumulation reuses the cavity and normal the material already has, so no extra taps.
     ('accumulation', ['bAccumulation'], dict(tex=3, samplers=4)),
     ('rain ripples', ['bWetness', 'bRipples'], dict(tex=5, samplers=4)),
@@ -172,7 +175,10 @@ def run(recipe):
         return False
 
     foliage = bool(recipe.get_editor_property('foliage')) if kind == mob_recipe.SURFACE else False
-    _log('checking M_%s (%s)' % (name, 'foliage' if foliage else kind))
+    # Foliage wins when a recipe asks for both, as it does when generating.
+    glass = (bool(recipe.get_editor_property('glass')) and not foliage
+             if kind == mob_recipe.SURFACE else False)
+    _log('checking M_%s (%s)' % (name, 'foliage' if foliage else 'glass' if glass else kind))
     r = _Result()
 
     # A master goes stale when a function it calls is rebuilt without it, and the errors land
@@ -216,9 +222,10 @@ def run(recipe):
         baseline = None
 
         for claim, on, expect in SURFACE_EXPECT:
-            if foliage:
-                # A foliage master carries an opacity mask and no tiling break, so the surface tap
-                # baselines do not describe it. Samplers still have to hold.
+            if foliage or glass:
+                # A foliage master carries an opacity mask and no tiling break, and a glass master is
+                # a translucent shader whose estimate starts elsewhere, so the surface tap baselines
+                # describe neither. Samplers still have to hold.
                 expect = {'samplers': expect['samplers']} if 'samplers' in expect else {}
             missing = [s for s in on if s not in switches]
             if missing:
@@ -289,6 +296,29 @@ def run(recipe):
                     on['samplers'] == off['samplers'] and on['tex'] == off['tex'],
                     'tex %s -> %s, samplers %s -> %s'
                     % (off['tex'], on['tex'], off['samplers'], on['samplers']))
+
+        if glass:
+            # An enum stringifies as "<BlendMode.BLEND_TRANSLUCENT: 2>", so match on the name appearing.
+            r.check('glass is translucent and two sided',
+                    bool(mat.get_editor_property('two_sided'))
+                    and 'TRANSLUCENT' in str(mat.get_editor_property('blend_mode')).upper(),
+                    str(mat.get_editor_property('blend_mode')))
+            r.check('glass is lit per pixel',
+                    'SURFACE_PER_PIXEL' in str(mat.get_editor_property('translucency_lighting_mode')).upper(),
+                    str(mat.get_editor_property('translucency_lighting_mode')))
+
+            if has_pin_probe:
+                opacity = MEL.get_material_property_input_node(mat, unreal.MaterialProperty.MP_OPACITY)
+                mask = MEL.get_material_property_input_node(mat, unreal.MaterialProperty.MP_OPACITY_MASK)
+                r.check('glass writes opacity and no opacity mask', opacity is not None and mask is None,
+                        'opacity %s, mask %s' % ('wired' if opacity else 'unwritten',
+                                                 'wired' if mask else 'unwritten'))
+
+            # Fade is a contract with gameplay, which drives it by name through a dynamic instance.
+            scalars = set(str(n) for n in MEL.get_scalar_parameter_names(mat))
+            wanted = ['Opacity', 'GrazingOpacity', 'FresnelExponent', 'Fade']
+            r.check('glass parameters present', all(n in scalars for n in wanted),
+                    'missing %s' % [n for n in wanted if n not in scalars])
 
     # Everything above compares the master against itself, so it passes just as happily on content
     # an older plugin built. This is the only check that can tell that apart. The recipe's own

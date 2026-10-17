@@ -132,6 +132,8 @@ The editor locks up while a master is generated. It runs on the game thread: a s
 <tr><td><code>_Lamp</code></td><td>emissive</td></tr>
 </table></div>
 
+<p>A glass recipe writes <code>_Clear</code> and <code>_Emissive</code> instead. See <a href="surface.html#glass">Glass</a>.</p>
+
 <h2>First landscape</h2>
 
 <p>Set the recipe's <b>Layers</b>. The first is the base, and it holds whatever weight the painted layers leave behind. Generate, then:</p>
@@ -170,6 +172,7 @@ Layer count is built into the material graph, so it cannot be changed on an inst
 <tr><td><b>Simplify Material To Layer&hellip;</b></td><td>turns a landscape material down to one layer so what is on screen is that layer's art and nothing else. Everything it changes is recorded, and Restore in the same window puts it back exactly. Reset takes those parameters to the parent's values, which is the way out when the recording is gone</td></tr>
 <tr><td><b>Fit UV Scale To Landscape&hellip;</b></td><td>reads the landscape's own quad size and writes every layer's <code>UVScale</code> so a tile measures the metres you asked for. A resized landscape does not have the quads the defaults assume, and then every layer tiles wrongly at once</td></tr>
 <tr><td><b>Remap Texture Channels&hellip;</b></td><td>repacks incoming art into the HRC a landscape layer reads, the CRM a surface reads or the CRT a foliage master reads. Common layouts are presets; anything else is three slots you set yourself</td></tr>
+<tr><td><b>Set Up Selected Textures For Unique UVs</b>, <b>&hellip; For Tiling</b></td><td>sets sRGB, compression and texture group on the Content Browser selection from each texture's suffix, and address Clamp or Wrap. Saves what it changes; a texture with no recognised suffix is left alone and named. See <a href="surface.html#texture-setup">Texture setup</a></td></tr>
 <tr><td><b>Assign Selected Textures To Landscape</b></td><td>takes the textures selected in the Content Browser and puts them on the matching layer slots by suffix</td></tr>
 <tr><td><b>Snap Selected Actor To Landscape Centre</b></td><td>drops the selection in the middle of the nearest landscape, sitting on the surface</td></tr>
 <tr><td><b>Fit Selected Box Volume To Landscape</b></td><td>centres and scales the selected volume to cover the nearest landscape exactly, streaming proxies included. Clears its rotation, since a turned box cannot be scaled to cover an axis aligned one</td></tr>
