@@ -18,9 +18,9 @@ bool UMobEditorLibrary::LeaveMobilePreview()
 	// Toggled off rather than replaced. Handing SetPreviewPlatform a bare feature level throws away
 	// the shader platform and platform names with it, and the toolbar has nothing left to offer to
 	// turn back on.
-	if (GEditor->IsFeatureLevelPreviewActive())
+	if (GEditor->IsPreviewPlatformActive())
 	{
-		GEditor->ToggleFeatureLevelPreview();
+		GEditor->TogglePreviewPlatform();
 	}
 
 	return true;
@@ -28,9 +28,9 @@ bool UMobEditorLibrary::LeaveMobilePreview()
 
 void UMobEditorLibrary::RestoreMobilePreview()
 {
-	if (GEditor && GEditor->IsFeatureLevelPreviewEnabled() && !GEditor->IsFeatureLevelPreviewActive())
+	if (GEditor && GEditor->IsPreviewPlatformEnabled() && !GEditor->IsPreviewPlatformActive())
 	{
-		GEditor->ToggleFeatureLevelPreview();
+		GEditor->TogglePreviewPlatform();
 	}
 }
 
